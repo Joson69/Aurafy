@@ -197,7 +197,7 @@ target\release\aurafy.exe
 
 ## Build the Windows executable with GitHub Actions
 
-To enable the Windows build on GitHub, copy [the workflow template](.github/build-windows.yml.example) to `.github/workflows/build-windows.yml`. Then open **Actions → Build Aurafy for Windows → Run workflow** and download the `aurafy-windows-x64` artifact after the workflow finishes.
+Open **Actions → Build Aurafy for Windows**, select a completed run, and download the `aurafy-windows-x64` artifact. You can also start a build with **Run workflow**.
 
 The workflow is a build helper, not an installer or code-signing service. Windows SmartScreen may show an unsigned-app warning for a personal build.
 
@@ -236,7 +236,7 @@ The test suite also checks UI navigation, old-settings compatibility, nullable S
 
 ```text
 Aurafy/
-├── .github/build-windows.yml.example
+├── .github/workflows/build-windows.yml
 ├── Cargo.toml
 ├── BUILD_RELEASE.bat
 ├── FIRST_RUN.md
