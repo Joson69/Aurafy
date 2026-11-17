@@ -1,0 +1,16 @@
+Aurafy 0.8.0 for Windows x64
+
+1. Extract the ZIP to a folder and open aurafy.exe. No build tools are needed.
+2. To connect Spotify, create your own app at https://developer.spotify.com/dashboard
+   and add these Redirect URIs:
+   http://127.0.0.1:8888/callback
+   http://127.0.0.1:43821/callback
+3. In Aurafy, open Settings > Account, enter the app's Client ID, then choose
+   Save and connect Spotify. Sign in with your own account.
+4. For audio directly in Aurafy, get your own Soloist key at
+   https://developer.spotify.com/dashboard/soloist. In Settings > Account >
+   Local player connection, enter the key and select Save key & enable playback.
+   Aurafy downloads the playback engine if needed. If prompted to pair, select
+   Aurafy in the Spotify device picker on your phone on the same network.
+
+This package contains the app, these instructions, and license notices.

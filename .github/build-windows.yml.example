@@ -1,0 +1,41 @@
+name: Build Aurafy for Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'src/**'
+      - 'assets/**'
+      - 'build.rs'
+      - '.github/workflows/build-windows.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Windows x64 release
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release executable
+        run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: aurafy-windows-x64
+          path: target/x86_64-pc-windows-msvc/release/aurafy.exe
+          if-no-files-found: error
+          retention-days: 14

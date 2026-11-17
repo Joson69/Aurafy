@@ -1,0 +1,66 @@
+stages:
+  - test
+  - build
+  - package
+
+variables:
+  CARGO_TERM_COLOR: always
+
+.windows_rust:
+  tags:
+    - saas-windows-medium-amd64
+  before_script:
+    - if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) { Invoke-WebRequest -Uri https://win.rustup.rs/x86_64 -OutFile rustup-init.exe; .\rustup-init.exe -y --default-toolchain stable-x86_64-pc-windows-msvc; $env:Path += ";$env:USERPROFILE\.cargo\bin" }
+    - rustc --version
+    - cargo --version
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}-windows-cargo"
+    paths:
+      - target/
+      - .cargo/
+
+test_windows:
+  stage: test
+  extends: .windows_rust
+  script:
+    - cargo fmt --check
+    - cargo test --locked --target x86_64-pc-windows-msvc
+
+build_windows_release:
+  stage: build
+  extends: .windows_rust
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+    - when: manual
+      allow_failure: true
+  script:
+    - cargo build --release --locked --target x86_64-pc-windows-msvc
+  artifacts:
+    name: "aurafy-${CI_COMMIT_SHORT_SHA}-windows-x64"
+    expire_in: 14 days
+    paths:
+      - target/x86_64-pc-windows-msvc/release/aurafy.exe
+
+package_release:
+  stage: package
+  tags:
+    - saas-windows-medium-amd64
+  needs:
+    - job: build_windows_release
+      artifacts: true
+  rules:
+    - if: $CI_COMMIT_TAG
+  script:
+    - $staging = "dist\Aurafy-$($env:CI_COMMIT_TAG)-Windows-x64"
+    - New-Item -ItemType Directory -Force -Path $staging | Out-Null
+    - Copy-Item "target\x86_64-pc-windows-msvc\release\aurafy.exe" "$staging\aurafy.exe"
+    - Copy-Item "README.md", "FIRST_RUN.md", "PATCH_NOTES.md", "LICENSE", "THIRD_PARTY_NOTICES.md" $staging
+    - Compress-Archive -Path "$staging\*" -DestinationPath "Aurafy-$($env:CI_COMMIT_TAG)-Windows-x64.zip" -Force
+    - Get-FileHash "Aurafy-$($env:CI_COMMIT_TAG)-Windows-x64.zip" -Algorithm SHA256 | Out-File -Encoding utf8 "Aurafy-$($env:CI_COMMIT_TAG)-Windows-x64.sha256.txt"
+  artifacts:
+    name: "Aurafy-${CI_COMMIT_TAG}-Windows-x64"
+    expire_in: never
+    paths:
+      - "Aurafy-*-Windows-x64.zip"
+      - "Aurafy-*-Windows-x64.sha256.txt"
