@@ -50,6 +50,7 @@ impl AurafyApp {
                         | AppEvent::DevicesLoaded { token: Some(_), .. }
                         | AppEvent::HomeDataLoaded { token: Some(_), .. }
                         | AppEvent::InsightsLoaded { token: Some(_), .. }
+                        | AppEvent::AutoplayLoaded { token: Some(_), .. }
                 )
             {
                 continue;
@@ -97,6 +98,38 @@ impl AurafyApp {
                     }
                 }
                 AppEvent::LyricsLoaded { key, result } => self.lyrics.finish(key, result),
+                AppEvent::AutoplayLoaded {
+                    generation,
+                    result,
+                    token,
+                } => {
+                    if let Some(token) = token {
+                        self.accept_token(token);
+                    }
+                    if generation != self.autoplay_generation {
+                        continue;
+                    }
+                    self.autoplay_pending = false;
+                    if self.queue_cleared_by_user {
+                        continue;
+                    }
+                    match result {
+                        Ok(mut tracks) if !tracks.is_empty() => {
+                            let first = tracks.remove(0);
+                            self.priority_queue.extend(tracks);
+                            self.priority_dispatched = Some((first.uri.clone(), Instant::now()));
+                            self.dispatch_track_play(first, ctx);
+                            self.set_status("Continuing playback…");
+                        }
+                        Ok(_) => {
+                            self.is_playing = false;
+                            self.set_status("Reached end of queue");
+                        }
+                        Err(_) => {
+                            self.is_playing = false;
+                        }
+                    }
+                }
                 AppEvent::ArtistLoaded {
                     generation,
                     result,
@@ -1040,6 +1073,20 @@ impl eframe::App for AurafyApp {
         {
             self.priority_auto_armed = false;
             let _ = self.play_next_priority_track(ctx);
+        } else if self.playback_idle
+            && self.priority_auto_armed
+            && !self.is_demo_mode()
+            && self.priority_queue.is_empty()
+            && self.queue.is_empty()
+            && !self.queue_cleared_by_user
+            && self.repeat_state == "off"
+            && !recently_dispatched
+            && !self.autoplay_pending
+            && self.token.is_some()
+            && !self.current_track.uri.is_empty()
+        {
+            self.priority_auto_armed = false;
+            self.start_autoplay_continuation(ctx);
         }
 
         if !self.window_state.hidden {
