@@ -733,7 +733,13 @@ impl AurafyApp {
             }
         }
         if let Some(ended_uri) = ended {
-            self.handle_suppressed_queue_end(Some(ended_uri), ctx);
+            if self.repeat_state == "track" && !self.current_track.uri.is_empty() {
+                self.dispatch_track_play(self.current_track.clone(), ctx);
+            } else if !self.priority_queue.is_empty() {
+                let _ = self.play_next_priority_track(ctx);
+            } else {
+                self.handle_suppressed_queue_end(Some(ended_uri), ctx);
+            }
         }
     }
 
