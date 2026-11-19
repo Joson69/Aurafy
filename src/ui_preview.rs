@@ -3788,11 +3788,11 @@ fn track_table_sorting_preserves_context_position_on_playback() {
 }
 
 #[test]
-fn queue_header_shows_total_runtime_and_active_sleep_timer() {
+fn queue_header_shows_up_next_without_fixed_counts_and_sleep_timer() {
     let ctx = egui::Context::default();
     let mut app = fixture(&ctx);
     app.show_queue = true;
-    app.queue = vec![real_track("q1"), real_track("q2")]; // 3 min + 3 min = 6 min
+    app.queue = vec![real_track("q1"), real_track("q2")];
     app.sleep_timer = Some(crate::preferences::SleepTimer::Deadline(
         std::time::Instant::now() + std::time::Duration::from_secs(15 * 60),
     ));
@@ -3812,8 +3812,12 @@ fn queue_header_shows_total_runtime_and_active_sleep_timer() {
         })
         .collect();
     assert!(
-        texts.iter().any(|t| t.contains("6 min")),
-        "expected queue total runtime '6 min' in texts: {texts:?}"
+        texts.iter().any(|t| t == "Up next"),
+        "expected plain 'Up next' header without fixed counts in texts: {texts:?}"
+    );
+    assert!(
+        !texts.iter().any(|t| t.contains("6 min")),
+        "queue header must not show fixed runtime: {texts:?}"
     );
     assert!(
         texts.iter().any(|t| t.contains("Sleep timer")),
@@ -4186,6 +4190,56 @@ fn search_play_keeps_manual_entries_and_restores_spotify_queue() {
         rx.try_recv().is_err(),
         "Spotify advances without an Aurafy override"
     );
+}
+
+#[test]
+fn autoplay_continues_after_queue_empties_unless_cleared() {
+    let ctx = egui::Context::default();
+    let (mut app, rx) = local_fixture(&ctx);
+    app.local_status.active = true;
+    app.token = Some(TokenState {
+        access_token: "test-token".into(),
+        refresh_token: None,
+        expires_at: Instant::now() + Duration::from_secs(3600),
+    });
+
+    let mut first = real_track(&format!("{:0>22}", 910));
+    first.name = "Lovers Rock".into();
+    let mut auto1 = real_track(&format!("{:0>22}", 911));
+    auto1.name = "Afraid".into();
+    let mut auto2 = real_track(&format!("{:0>22}", 912));
+    auto2.name = "CHIHIRO".into();
+
+    app.current_track = first;
+    app.duration_ms = 200_000;
+    app.progress_ms = 199_800;
+    app.is_playing = true;
+    app.suppress_upstream_queue = true;
+
+    app.handle_suppressed_queue_end(None, &ctx);
+    assert!(app.autoplay_pending);
+    assert!(rx.try_recv().is_err());
+
+    app.tx
+        .send(AppEvent::AutoplayLoaded {
+            generation: app.autoplay_generation,
+            result: Ok(vec![auto1.clone(), auto2.clone()]),
+            token: None,
+        })
+        .unwrap();
+    app.handle_events(&ctx);
+    assert!(!app.autoplay_pending);
+    let play = rx.try_recv().expect("autoplay should dispatch first track");
+    assert_eq!(play.action, "play_track");
+    assert_eq!(play.requests[0]["uri"], serde_json::json!(auto1.uri));
+    assert_eq!(app.priority_queue, vec![auto2]);
+
+    let _ = app.clear_up_next_queue();
+    assert!(app.queue_cleared_by_user);
+    app.handle_suppressed_queue_end(None, &ctx);
+    let stop = rx.try_recv().expect("cleared queue should pause at end");
+    assert_eq!(stop.action, "pause");
+    assert!(!app.is_playing);
 }
 
 fn shapes_text_rects(shapes: &[egui::epaint::ClippedShape], target: &str) -> Vec<Rect> {
