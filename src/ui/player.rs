@@ -265,27 +265,7 @@ impl AurafyApp {
                         i18n::tr(lang, i18n::Text::UpNext)
                     };
                     let total_count = self.priority_queue.len() + self.queue.len();
-                    let header_text = if total_count == 0 {
-                        format!("{queue_title}  ·  0")
-                    } else {
-                        let total_ms: u64 = self
-                            .priority_queue
-                            .iter()
-                            .chain(self.queue.iter())
-                            .map(|t| t.duration_ms)
-                            .sum();
-                        let secs = total_ms / 1000;
-                        let mins = secs / 60;
-                        let hrs = mins / 60;
-                        let runtime = if hrs > 0 {
-                            format!("{hrs}h {}m", mins % 60)
-                        } else if mins > 0 {
-                            format!("{mins} min")
-                        } else {
-                            format!("{secs} sec")
-                        };
-                        format!("{queue_title}  ·  {total_count}  ·  {runtime}")
-                    };
+                    let header_text = queue_title.to_owned();
                     if total_count > 0 {
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             if ui
@@ -327,18 +307,16 @@ impl AurafyApp {
                     ui.add_space(6.0);
                     let label = if manual_len > 0 && collection_len > 0 {
                         if self.active_collection_uri.is_some() {
-                            format!(
-                                "Up next · {manual_len} queued · {collection_len} from playlist"
-                            )
+                            format!("Queued next ({manual_len}) · Next from playlist")
                         } else {
-                            format!("Up next · {manual_len} queued · {collection_len} shuffled")
+                            format!("Queued next ({manual_len}) · Autoplay")
                         }
                     } else if manual_len > 0 {
-                        format!("Queued next · {manual_len}")
+                        format!("Queued next ({manual_len})")
                     } else if self.active_collection_uri.is_some() {
-                        format!("Next from playlist · {collection_len}")
+                        "Next from playlist".to_owned()
                     } else {
-                        format!("Shuffled tracks · {collection_len}")
+                        "Autoplay".to_owned()
                     };
                     ui.label(RichText::new(label).size(11.0).color(colours.muted));
                 }
