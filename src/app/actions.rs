@@ -103,6 +103,9 @@ impl AurafyApp {
         self.priority_dispatched = None;
         self.priority_auto_armed = false;
         self.suppress_upstream_queue = false;
+        self.queue_cleared_by_user = false;
+        self.autoplay_pending = false;
+        self.autoplay_generation = self.autoplay_generation.wrapping_add(1);
         self.active_collection_uri = None;
         self.collection_play_generation = self.collection_play_generation.wrapping_add(1);
         self.queue.clear();
@@ -467,6 +470,9 @@ impl AurafyApp {
         let first = valid[start_idx].clone();
         let remaining: Vec<Track> = valid.into_iter().skip(start_idx + 1).take(1000).collect();
         self.suppress_upstream_queue = true;
+        self.queue_cleared_by_user = false;
+        self.autoplay_pending = false;
+        self.autoplay_generation = self.autoplay_generation.wrapping_add(1);
         self.queue.clear();
         self.priority_queue = remaining;
         self.manual_queue_len = 0;
@@ -608,6 +614,9 @@ impl AurafyApp {
         self.restoring_playback = false;
         self.pending_handoff = None;
         self.suppress_upstream_queue = false;
+        self.queue_cleared_by_user = false;
+        self.autoplay_pending = false;
+        self.autoplay_generation = self.autoplay_generation.wrapping_add(1);
         self.active_collection_uri = None;
         self.priority_queue.clear();
         self.priority_dispatched = None;
@@ -643,6 +652,9 @@ impl AurafyApp {
         // A standalone play starts a Spotify-owned queue. Keep explicit
         // Aurafy queue entries but drop the previous collection's local tail.
         self.suppress_upstream_queue = false;
+        self.queue_cleared_by_user = false;
+        self.autoplay_pending = false;
+        self.autoplay_generation = self.autoplay_generation.wrapping_add(1);
         self.priority_dispatched = None;
         self.queue.clear();
         self.dispatch_track_play(track, ctx);
@@ -721,8 +733,15 @@ impl AurafyApp {
                 let _ = self.play_next_priority_track(ctx);
                 return;
             }
-            if self.suppress_upstream_queue {
-                self.set_status("Queue is empty");
+            if self.suppress_upstream_queue || self.use_free_player() {
+                if !self.queue_cleared_by_user
+                    && self.token.is_some()
+                    && !self.current_track.uri.is_empty()
+                {
+                    self.start_autoplay_continuation(ctx);
+                } else {
+                    self.set_status("Queue is empty");
+                }
                 return;
             }
         }
@@ -854,6 +873,7 @@ impl AurafyApp {
     }
 
     pub(crate) fn queue_priority_tracks(&mut self, incoming: &[Track]) {
+        self.queue_cleared_by_user = false;
         let space = 1000usize.saturating_sub(self.priority_queue.len());
         let added: Vec<Track> = incoming.iter().take(space).cloned().collect();
         if added.is_empty() {
@@ -874,7 +894,10 @@ impl AurafyApp {
         self.queue.clear();
         if !self.is_demo_mode() {
             self.suppress_upstream_queue = true;
+            self.queue_cleared_by_user = true;
         }
+        self.autoplay_pending = false;
+        self.autoplay_generation = self.autoplay_generation.wrapping_add(1);
         let total = cleared_priority + cleared_upstream;
         let message = if total == 0 {
             "Your queue is already empty.".to_owned()
@@ -910,6 +933,14 @@ impl AurafyApp {
         {
             return;
         }
+        if !self.queue_cleared_by_user
+            && self.repeat_state == "off"
+            && self.token.is_some()
+            && !self.current_track.uri.is_empty()
+        {
+            self.start_autoplay_continuation(ctx);
+            return;
+        }
         self.active_collection_uri = None;
         self.priority_auto_armed = false;
         self.is_playing = false;
@@ -919,6 +950,121 @@ impl AurafyApp {
         ));
         self.send_playback_action("pause", ctx);
         self.set_status("Reached end of queue");
+    }
+
+    pub(crate) fn start_autoplay_continuation(&mut self, ctx: &egui::Context) {
+        if self.autoplay_pending || self.is_demo_mode() {
+            return;
+        }
+        let Some(token) = self.token.clone() else {
+            return;
+        };
+        if self.current_track.uri.is_empty() {
+            return;
+        }
+        self.autoplay_pending = true;
+        self.autoplay_generation = self.autoplay_generation.wrapping_add(1);
+        let generation = self.autoplay_generation;
+        let seed = self.current_track.clone();
+        let mut seen_uris: std::collections::HashSet<String> = self
+            .recent_tracks
+            .iter()
+            .take(30)
+            .map(|t| t.uri.clone())
+            .collect();
+        seen_uris.insert(seed.uri.clone());
+
+        #[cfg(not(test))]
+        {
+            let client_id = self.config.client_id.clone();
+            let tx = self.tx.clone();
+            let ctx = ctx.clone();
+            thread::spawn(move || {
+                let (token, result) = match spotify::refresh_if_needed(token, &client_id) {
+                    Ok(token) => {
+                        let artist = seed
+                            .artist_names
+                            .first()
+                            .map(String::as_str)
+                            .unwrap_or_else(|| seed.artist.split(',').next().unwrap_or("").trim());
+                        let mut queries = Vec::new();
+                        if !artist.is_empty() {
+                            queries.push(format!("{artist} radio"));
+                            queries.push(format!("{artist} mix"));
+                        }
+                        if !seed.name.is_empty() {
+                            queries.push(format!("{} radio", seed.name));
+                        }
+                        let mut lists: Vec<Vec<Track>> = thread::scope(|s| {
+                            let handles: Vec<_> = queries
+                                .iter()
+                                .map(|q| {
+                                    let access = &token.access_token;
+                                    s.spawn(move || {
+                                        spotify::search_tracks(access, q).unwrap_or_default()
+                                    })
+                                })
+                                .collect();
+                            handles.into_iter().filter_map(|h| h.join().ok()).collect()
+                        });
+                        if let Some(artist_id) = seed.artist_ids.first().filter(|id| !id.is_empty())
+                            && let Ok(page) = spotify::catalog::artist_songs(
+                                &token.access_token,
+                                artist_id,
+                                artist,
+                                None,
+                            )
+                        {
+                            lists.push(page.items);
+                        }
+                        let mut combined = Vec::new();
+                        let mut artist_counts: std::collections::HashMap<String, usize> =
+                            std::collections::HashMap::new();
+                        let max_len = lists.iter().map(Vec::len).max().unwrap_or(0);
+                        'outer: for idx in 0..max_len {
+                            for list in &lists {
+                                let Some(track) = list.get(idx) else {
+                                    continue;
+                                };
+                                if track.uri.is_empty()
+                                    || spotify::validate_track_uri(&track.uri).is_err()
+                                    || !seen_uris.insert(track.uri.clone())
+                                {
+                                    continue;
+                                }
+                                let primary_artist = track
+                                    .artist_names
+                                    .first()
+                                    .map(String::as_str)
+                                    .unwrap_or_else(|| {
+                                        track.artist.split(',').next().unwrap_or("").trim()
+                                    })
+                                    .to_lowercase();
+                                let count = artist_counts.entry(primary_artist).or_insert(0);
+                                if *count >= 2 {
+                                    continue;
+                                }
+                                *count += 1;
+                                combined.push(track.clone());
+                                if combined.len() >= 20 {
+                                    break 'outer;
+                                }
+                            }
+                        }
+                        (Some(token), Ok(combined))
+                    }
+                    Err(error) => (None, Err(error)),
+                };
+                let _ = tx.send(AppEvent::AutoplayLoaded {
+                    generation,
+                    result,
+                    token,
+                });
+                ctx.request_repaint();
+            });
+        }
+        #[cfg(test)]
+        let _ = (token, generation, seed, seen_uris, ctx);
     }
 
     pub(crate) fn append_queue_preview(&mut self, incoming: &[Track]) {
