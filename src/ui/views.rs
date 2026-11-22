@@ -1753,6 +1753,16 @@ impl AurafyApp {
                     let tracks = self.playlist_tracks.clone();
                     self.queue_tracks_batch(tracks, ctx);
                 }
+                if self.can_edit_playlist(&playlist)
+                    && ui
+                        .add_enabled(
+                            self.playlist_add_pending.is_none(),
+                            egui::Button::new("Edit playlist"),
+                        )
+                        .clicked()
+                {
+                    self.open_playlist_editor(playlist.clone(), ctx);
+                }
                 if !self.playlist_tracks.is_empty() {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         filter_changed |= search_pill_input(

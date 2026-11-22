@@ -31,6 +31,7 @@ impl AurafyApp {
 
     pub(crate) fn handle_events(&mut self, ctx: &egui::Context) {
         self.poll_free_player(ctx);
+        self.poll_playlist_editor(ctx);
         while let Ok(event) = self.rx.try_recv() {
             // Responses already in flight must not reconnect a signed-out account.
             if self.token.is_none()
@@ -420,33 +421,7 @@ impl AurafyApp {
                                     self.playlist_add_pending = None;
                                     self.playlist_add_error = None;
                                     if let Some((id, uri)) = self.playlist_remove_target.take() {
-                                        if let Some(items) = self.playlist_membership.get_mut(&id) {
-                                            items.remove(&uri);
-                                        }
-                                        if self.playlist_picker_track_uri == uri {
-                                            self.playlist_picker_added.remove(&id);
-                                        }
-                                        self.membership_generation =
-                                            self.membership_generation.wrapping_add(1);
-                                        self.membership_loading = false;
-                                        self.membership_attempted
-                                            .retain(|id| self.playlist_membership.contains_key(id));
-                                        if self
-                                            .selected_playlist
-                                            .as_ref()
-                                            .is_some_and(|p| p.id == id)
-                                        {
-                                            self.playlist_tracks.retain(|track| track.uri != uri);
-                                            #[cfg(not(test))]
-                                            if let Some(playlist) = self.selected_playlist.clone() {
-                                                self.open_playlist(playlist, ctx);
-                                            }
-                                        }
-                                        self.library_revision += 1;
-                                        self.last_library_poll =
-                                            Instant::now() - Duration::from_secs(60);
-                                        #[cfg(not(test))]
-                                        self.load_library(ctx, true);
+                                        self.playlist_removal_committed(&id, &[uri], ctx);
                                     }
                                     self.set_status("Removed from playlist");
                                 }
@@ -1097,6 +1072,7 @@ impl eframe::App for AurafyApp {
             self.draw_queue(ctx);
             self.draw_main(ctx);
             self.draw_playlist_dialogs(ctx);
+            self.draw_playlist_editor(ctx);
             self.draw_resize_handles(ctx);
             self.artwork_cache.finish_frame();
         }

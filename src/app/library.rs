@@ -251,6 +251,43 @@ impl AurafyApp {
         );
     }
 
+    pub(super) fn playlist_removal_committed(
+        &mut self,
+        id: &str,
+        uris: &[String],
+        ctx: &egui::Context,
+    ) {
+        let removed: HashSet<_> = uris.iter().collect();
+        if let Some(items) = self.playlist_membership.get_mut(id) {
+            items.retain(|uri| !removed.contains(uri));
+        }
+        if removed.contains(&self.playlist_picker_track_uri) {
+            self.playlist_picker_added.remove(id);
+        }
+        self.membership_generation = self.membership_generation.wrapping_add(1);
+        self.membership_loading = false;
+        self.membership_attempted
+            .retain(|id| self.playlist_membership.contains_key(id));
+        if self
+            .selected_playlist
+            .as_ref()
+            .is_some_and(|playlist| playlist.id == id)
+        {
+            self.playlist_tracks
+                .retain(|track| !removed.contains(&track.uri));
+            #[cfg(not(test))]
+            if let Some(playlist) = self.selected_playlist.clone() {
+                self.open_playlist(playlist, ctx);
+            }
+        }
+        self.library_revision += 1;
+        self.last_library_poll = Instant::now() - Duration::from_secs(60);
+        #[cfg(not(test))]
+        self.load_library(ctx, true);
+        #[cfg(test)]
+        let _ = ctx;
+    }
+
     pub(crate) fn load_library(&mut self, ctx: &egui::Context, force: bool) {
         if !self.is_connected() {
             self.set_status("Connect Spotify to load your real library");

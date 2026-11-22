@@ -2,6 +2,7 @@ mod actions;
 mod events;
 mod library;
 mod playback;
+mod playlist_editor;
 
 pub(crate) use events::{demo_tracks, format_time, paint_cover_rounded};
 
@@ -417,6 +418,7 @@ pub(crate) struct AurafyApp {
     pub(crate) search_edited_at: Option<Instant>,
     pub(crate) library_filter: String,
     pub(crate) playlist_track_filter: String,
+    playlist_editor: Option<playlist_editor::Editor>,
     pub(crate) track_sort: TrackSort,
     pub(crate) track_sort_context: String,
     pub(crate) settings_tab: SettingsTab,
@@ -801,6 +803,7 @@ impl AurafyApp {
             search_edited_at: None,
             library_filter: String::new(),
             playlist_track_filter: String::new(),
+            playlist_editor: None,
             track_sort: TrackSort::default(),
             track_sort_context: String::new(),
             settings_tab,

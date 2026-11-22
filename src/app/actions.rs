@@ -89,6 +89,8 @@ impl AurafyApp {
         self.playlists.clear();
         self.selected_playlist = None;
         self.playlist_track_filter.clear();
+        self.playlist_editor = None;
+        self.playlist_remove_target = None;
         self.playlist_error = None;
         self.playlist_tracks.clear();
         self.show_add_to_playlist = false;
