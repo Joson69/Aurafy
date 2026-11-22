@@ -31,6 +31,12 @@ Aurafy was previously named Auralis. Version 0.7.0 introduced the Aurafy name. T
 - Settings → Appearance: lyrics text size and automatic following on open/song change. Scrolling freely and clicking timed lines still work.
 - Soloist supports lossless audio. Aurafy configures the requested quality and normalization through the engine preference stores; the local API cannot verify the delivered format. Crossfade is not offered because the reviewed implementation does not reliably crossfade real playlist/album contexts.
 
+## Edit an owned playlist
+
+Open a playlist you own and choose **Edit playlist**. Filter by artist, check individual songs or select matching songs, then choose **Review removal**. The review lists the songs and how many playlist entries will be removed.
+
+Repeated entries for the same Spotify track are grouped. You can remove up to 100 distinct songs per confirmation. If the playlist changes while the editor is open, reload it and review the latest list before confirming.
+
 ## What works in this build
 
 - Playlist and album row playback retains its Spotify collection context and original row offset, so the next track follows the collection rather than single-song autoplay. Playlist pages have a Play/Pause button, and Home/Library playlist cards expose one on hover or while playing.
