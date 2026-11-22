@@ -136,6 +136,13 @@ struct ApiTrack {
     artists: Vec<ApiArtist>,
     album: Option<ApiAlbum>,
     is_playable: Option<bool>,
+    linked_from: Option<LinkedTrack>,
+}
+
+#[derive(Deserialize)]
+struct LinkedTrack {
+    #[serde(default)]
+    uri: String,
 }
 
 #[derive(Deserialize)]
@@ -265,6 +272,7 @@ struct RecentlyPlayedItem {
 struct PlaylistItemsPage {
     #[serde(default)]
     items: Vec<ApiPlaylistItem>,
+    next: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -1044,17 +1052,7 @@ pub fn get_playlist_items(access_token: &str, playlist_id: &str) -> Result<Vec<T
     let client = http_client()?;
     let mut tracks = Vec::new();
     for offset in [0, 50, 100] {
-        let offset_text = offset.to_string();
-        let response = api_response(
-            client
-                .get(format!("{API_BASE}/playlists/{playlist_id}/items"))
-                .bearer_auth(access_token)
-                .query(&[("limit", "50"), ("offset", offset_text.as_str())]),
-            "Could not load playlist tracks",
-        )?;
-        let data: PlaylistItemsPage = response
-            .json()
-            .map_err(|e| format!("Could not parse playlist tracks: {e}"))?;
+        let data = playlist_items_page(&client, access_token, playlist_id, offset)?;
         let page_len = data.items.len();
         tracks.extend(playlist_page_tracks(data, offset));
         if page_len < 50 {
@@ -1062,6 +1060,128 @@ pub fn get_playlist_items(access_token: &str, playlist_id: &str) -> Result<Vec<T
         }
     }
     Ok(tracks)
+}
+
+fn playlist_items_page(
+    client: &Client,
+    access: &str,
+    id: &str,
+    offset: usize,
+) -> Result<PlaylistItemsPage, String> {
+    api_response(
+        client
+            .get(format!("{API_BASE}/playlists/{id}/items"))
+            .bearer_auth(access)
+            .query(&[("limit", 50), ("offset", offset)]),
+        "Could not load playlist tracks",
+    )?
+    .json()
+    .map_err(|error| format!("Could not parse playlist tracks: {error}"))
+}
+
+pub(crate) const PLAYLIST_REMOVAL_LIMIT: usize = 100;
+
+pub(crate) struct PlaylistEditSnapshot {
+    pub version: String,
+    pub tracks: Vec<Track>,
+}
+
+#[derive(Deserialize)]
+struct PlaylistVersion {
+    owner: ApiOwner,
+    snapshot_id: String,
+}
+
+fn playlist_edit_version(
+    client: &Client,
+    access: &str,
+    id: &str,
+    owner: &str,
+) -> Result<String, String> {
+    if id.is_empty() || !id.bytes().all(|byte| byte.is_ascii_alphanumeric()) {
+        return Err("Select a valid Spotify playlist first.".into());
+    }
+    let state: PlaylistVersion = api_response(
+        client
+            .get(format!("{API_BASE}/playlists/{id}"))
+            .bearer_auth(access)
+            .query(&[("fields", "owner(id),snapshot_id")]),
+        "Could not verify playlist ownership and version",
+    )?
+    .json()
+    .map_err(|error| format!("Could not read playlist version: {error}"))?;
+    if owner.is_empty() || state.owner.id != owner {
+        return Err("Choose a playlist you own.".into());
+    }
+    if state.snapshot_id.is_empty() {
+        return Err("Spotify did not supply a playlist version.".into());
+    }
+    Ok(state.snapshot_id)
+}
+
+pub(crate) fn load_playlist_edit_snapshot(
+    access: &str,
+    id: &str,
+    owner: &str,
+) -> Result<PlaylistEditSnapshot, String> {
+    let client = http_client()?;
+    let version = playlist_edit_version(&client, access, id, owner)?;
+    let mut tracks = Vec::new();
+    for offset in (0..100_000).step_by(50) {
+        let page = playlist_items_page(&client, access, id, offset)?;
+        let done = page.next.is_none();
+        tracks.extend(page.items.into_iter().filter_map(|entry| {
+            let mut track = entry.item?;
+            if let Some(original) = track.linked_from.take() {
+                track.uri = original.uri;
+            }
+            Some(into_track(track))
+        }));
+        if done {
+            if version != playlist_edit_version(&client, access, id, owner)? {
+                return Err(
+                    "The playlist changed while loading. Reload it to review the latest tracks."
+                        .into(),
+                );
+            }
+            return Ok(PlaylistEditSnapshot { version, tracks });
+        }
+    }
+    Err("Could not read the complete playlist.".into())
+}
+
+pub(crate) fn remove_playlist_selection(
+    access: &str,
+    id: &str,
+    owner: &str,
+    version: &str,
+    uris: &[String],
+) -> Result<(), String> {
+    if uris.is_empty() || uris.len() > PLAYLIST_REMOVAL_LIMIT {
+        return Err("Select between 1 and 100 distinct songs.".into());
+    }
+    for uri in uris {
+        validate_track_uri(uri)?;
+    }
+    let client = http_client()?;
+    if version != playlist_edit_version(&client, access, id, owner)? {
+        return Err(
+            "The playlist changed after you opened the editor. Reload it before removing tracks."
+                .into(),
+        );
+    }
+    let items: Vec<_> = uris
+        .iter()
+        .map(|uri| serde_json::json!({"uri":uri}))
+        .collect();
+    api_response(
+        client
+            .delete(format!("{API_BASE}/playlists/{id}/items"))
+            .bearer_auth(access)
+            .json(&serde_json::json!({"items": items, "snapshot_id": version})),
+        "Could not remove the selected tracks",
+    )?;
+    Ok(())
 }
 
 fn playlist_page_tracks(page: PlaylistItemsPage, offset: usize) -> Vec<Track> {
