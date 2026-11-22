@@ -1040,71 +1040,10 @@ pub fn get_playlist_uris(
     Err("Playlist membership exceeded the supported limit".into())
 }
 
-pub fn playlist_version(access: &str, id: &str, owner: &str) -> Result<String, String> {
-    if id.is_empty() || !id.bytes().all(|b| b.is_ascii_alphanumeric()) {
-        return Err("Invalid playlist ID".into());
-    }
-    let data: serde_json::Value = api_response(
-        http_client()?
-            .get(format!("{API_BASE}/playlists/{id}"))
-            .bearer_auth(access)
-            .query(&[("fields", "owner(id),snapshot_id")]),
-        "Could not check playlist version",
-    )?
-    .json()
-    .map_err(|_| "Could not read playlist version")?;
-    if data["owner"]["id"].as_str() != Some(owner) || owner.is_empty() {
-        return Err("Choose a playlist you own.".into());
-    }
-    data["snapshot_id"]
-        .as_str()
-        .filter(|s| !s.is_empty())
-        .map(str::to_owned)
-        .ok_or_else(|| "Spotify did not supply a playlist version.".into())
-}
-
-pub fn remove_reviewed_tracks(
-    access: &str,
-    id: &str,
-    owner: &str,
-    version: &str,
-    uris: &[String],
-) -> Result<(), String> {
-    if playlist_version(access, id, owner)? != version {
-        return Err("The playlist changed. Preview the removal again.".into());
-    }
-    if uris.is_empty() || uris.len() > 100 {
-        return Err("A removal can contain up to 100 distinct songs.".into());
-    }
-    for uri in uris {
-        validate_track_uri(uri)?;
-    }
-    let items: Vec<_> = uris
-        .iter()
-        .map(|uri| serde_json::json!({"uri": uri}))
-        .collect();
-    api_response(
-        http_client()?
-            .delete(format!("{API_BASE}/playlists/{id}/items"))
-            .bearer_auth(access)
-            .json(&serde_json::json!({"items":items,"snapshot_id":version})),
-        "Could not apply playlist removal",
-    )?;
-    Ok(())
-}
-
 pub fn get_playlist_items(access_token: &str, playlist_id: &str) -> Result<Vec<Track>, String> {
-    playlist_tracks(access_token, playlist_id, 3)
-}
-
-pub fn playlist_tracks(
-    access_token: &str,
-    playlist_id: &str,
-    pages: usize,
-) -> Result<Vec<Track>, String> {
     let client = http_client()?;
     let mut tracks = Vec::new();
-    for offset in (0..pages).map(|page| page * 50) {
+    for offset in [0, 50, 100] {
         let offset_text = offset.to_string();
         let response = api_response(
             client
@@ -1122,11 +1061,7 @@ pub fn playlist_tracks(
             return Ok(tracks);
         }
     }
-    if pages == 3 || pages >= 20 {
-        Ok(tracks)
-    } else {
-        Err("Playlist exceeds the DJ scan limit.".into())
-    }
+    Ok(tracks)
 }
 
 fn playlist_page_tracks(page: PlaylistItemsPage, offset: usize) -> Vec<Track> {

@@ -1096,7 +1096,6 @@ impl eframe::App for AurafyApp {
             self.draw_sidebar(ctx);
             self.draw_queue(ctx);
             self.draw_main(ctx);
-            self.draw_ask(ctx);
             self.draw_playlist_dialogs(ctx);
             self.draw_resize_handles(ctx);
             self.artwork_cache.finish_frame();

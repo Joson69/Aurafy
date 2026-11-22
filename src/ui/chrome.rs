@@ -119,9 +119,6 @@ impl AurafyApp {
                 ] {
                     self.nav_item(ui, ctx, page, kind, label);
                 }
-                if ui.button("Ask Aurafy").clicked() {
-                    self.ask.open = !self.ask.open;
-                }
                 ui.add_space(20.0);
                 let available = ui.available_rect_before_wrap();
                 let list_rect = available;

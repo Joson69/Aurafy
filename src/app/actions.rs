@@ -42,7 +42,6 @@ impl AurafyApp {
     }
 
     pub(crate) fn disconnect_spotify(&mut self) {
-        self.ask = Default::default();
         self.stop_local_playback();
         self.insights.reset();
         self.membership_generation = self.membership_generation.wrapping_add(1);

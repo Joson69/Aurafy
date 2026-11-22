@@ -1,5 +1,4 @@
 mod actions;
-mod ask;
 mod events;
 mod library;
 mod playback;
@@ -486,7 +485,6 @@ pub(crate) struct AurafyApp {
     pub(crate) follow_remote_device: bool,
     pub(crate) requested_track_uri: Option<String>,
     pub(crate) restoring_playback: bool,
-    pub(crate) ask: ask::Ask,
     pub(crate) show_queue: bool,
     pub(crate) queue_show_recent: bool,
 
@@ -877,7 +875,6 @@ impl AurafyApp {
             follow_remote_device: false,
             requested_track_uri: None,
             restoring_playback: configured,
-            ask: ask::Ask::default(),
             show_queue,
             saved_tracks: Vec::new(),
             recent_tracks: Vec::new(),
