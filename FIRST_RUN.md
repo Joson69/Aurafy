@@ -1,60 +1,45 @@
-# Aurafy 0.7.0 first-run checklist (Windows 11)
+# Get started with Aurafy on Windows
 
-## Install the build tools
+## Open Aurafy
 
-This release pins both `eframe` and `egui` to **0.33.3**. The pin is intentional: egui 0.34 changed the application entrypoint from `App::update` to `App::ui` and reworked the top-level UI API. Do not change these versions without porting the application code.
+1. [Download the Windows x64 ZIP](https://gitlab.com/aurafy-project1/aurafy-downloads/-/raw/main/Aurafy-0.8.0-Windows-x64.zip) and extract it.
+2. Open `aurafy.exe`. You can browse the sample library before connecting Spotify. Demo mode is silent.
 
-1. Install Rust stable from https://rustup.rs/.
-2. Restart PowerShell / Windows Terminal.
-3. Confirm `rustc --version` reports 1.90 or later and `cargo --version` works.
-4. Double-click `RUN_AURAFY.bat` to build and launch Demo Mode.
+Closing the window sends Aurafy to the Windows tray by default. To exit, use **Quit Aurafy** from the tray menu or press **Ctrl+Q**. Change close behaviour in **Settings → General**.
 
-Closing the window keeps music playing in the Windows tray. Click the Aurafy tray icon (it may be under the tray's up arrow) or launch Aurafy again to reopen it. Right-click the icon for playback controls and **Quit Aurafy**. To exit when closing instead, disable **Settings → General → Keep running when I close Aurafy**.
+## Connect your Spotify account
 
-## Set up Spotify
+1. Open the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) with an active Spotify Premium account. Create an app and select **Web API**.
+2. Register both redirect URIs in the app settings and save:
+   - `http://127.0.0.1:8888/callback`
+   - `http://127.0.0.1:43821/callback`
+3. Copy the app's **Client ID**. Open Aurafy's **Settings → Account → Connect your Spotify account**, paste the Client ID, and select **Save and connect Spotify**.
+4. Approve access in your browser and keep Aurafy open until sign-in finishes.
 
-1. Visit https://developer.spotify.com/dashboard.
-2. Create a Spotify app.
-3. Add this Redirect URI exactly:
+Spotify permits up to five authorized accounts on a new [Development Mode](https://developer.spotify.com/documentation/web-api/concepts/quota-modes) app. If the account you want to connect differs from the app owner's, add it to the app's user list before signing in. Some Spotify endpoints limit which playlists Aurafy can read or edit.
 
-   `http://127.0.0.1:8888/callback`
+## Choose where to listen
 
-   Also add `http://127.0.0.1:43821/callback`. This lets Aurafy use port 43821 when 8888 is busy. Keep both entries.
+For a phone or another Spotify Connect device, start Spotify on that device, then select it from the device button in Aurafy's player. Playback control through the Spotify Web API requires Premium.
 
-4. Copy the app's Client ID.
-5. In Aurafy, open Settings → Account → Connect your Spotify account, paste the Client ID, and click **Save and connect Spotify**.
-6. Approve the permissions in your browser. If it does not open, click **Open sign-in page** or **Copy sign-in link** and paste the link into your browser. Keep Aurafy open until sign-in completes. Use **Cancel sign-in** before starting a fresh attempt.
-7. Use the device button in the player to see and select your Spotify Connect outputs. Aurafy is selected on startup.
+For audio on this PC:
 
-Already connected? Your saved session is reused. Click your avatar for Profile. The player’s device button chooses the output. Settings contains General, Listening & sound, Appearance, Privacy, and Account. Developer connection details stay collapsed in Account.
+1. Generate your personal [Spotify Soloist API key](https://developer.spotify.com/dashboard/soloist) with your Premium account.
+2. Open **Settings → Account → Local player connection**, paste the key into the masked field, and select **Save key & enable playback**.
+3. After Aurafy starts the official player, open Spotify's device picker on a phone or desktop on the same local network and select **Aurafy**. This pairs the player for subsequent launches.
 
-Aurafy selects this computer and resumes music automatically on opening. To start paused instead, turn off **Resume music when Aurafy opens** in Settings → General.
+Use the device button to transfer playback back and forth. To start paused, turn off **Resume music when Aurafy opens** in **Settings → General**.
 
-Starting paused still selects Aurafy as the output. Press the main Play button to listen; choosing a playback device first is unnecessary.
+## If setup gets stuck
 
-After closing Aurafy, reopen the same executable. Your last page, search, song, and position are restored while Spotify reconnects. Press Play to resume the existing session. Selecting a song from the recent-search popup plays it directly; the × removes that history entry.
+| What you see | What to try |
+| --- | --- |
+| The sign-in page did not open | Select **Open sign-in page** or **Copy sign-in link** in Aurafy. |
+| Spotify reports an invalid client or redirect URL | Check the Client ID and save both exact redirect URIs in the same Spotify app. |
+| Spotify refuses access to the account | Verify the developer app owner still has Premium and the signing-in account is authorized in the dashboard. |
+| Aurafy is missing from Spotify's device picker | Wait for the local player to finish starting, then confirm both devices are on the same local network. |
+| Previously working local playback stopped | Select **Reconnect player** in **Settings → Account → Local player connection → Connection troubleshooting**. Spotify Soloist builds [expire after 90 days](https://developer.spotify.com/documentation/soloist/reference/downloads-and-updates). Follow the app's message if it asks for a new engine build. |
 
-## Enable audio on Aurafy
+Aurafy uses browser-based Spotify sign-in. Enter a Client ID in the sign-in form and a Soloist API key in the local player form. Keep your Client Secret, sign-in URLs, and keys out of issue reports.
 
-Generate a personal key at https://developer.spotify.com/dashboard/soloist. In Settings → Account → Local player connection, enter it into the masked **Spotify Soloist API key** field and click **Save key & enable playback**. The key is stored in Windows Credential Manager.
-
-The official playback engine is downloaded if needed. Once it starts, choose **Aurafy** in Spotify's device picker on your phone or desktop once to pair it. Keep both devices on the same local network for initial pairing. You can then transfer playback from the phone to Aurafy or back. Select Aurafy in the player’s device picker to bring a remote session here without selecting a new song.
-
-Version 0.5.2 lets the native player restore its own saved session. Wait for verification, then use Play normally. **Reconnect player** retries without clearing the connection. **Settings → Account → Local player connection → Connection troubleshooting → Reset saved pairing** deliberately disconnects it and requires another phone selection; use this only when you intend to re-pair.
-
-Do not paste a Client Secret into Aurafy. OAuth uses PKCE. On Windows, Aurafy stores the refresh token in Windows Credential Manager.
-
-## Spotify account and API caveats
-
-Spotify's Development Mode currently requires Premium for the app owner and limits new apps to five authorized users. Playback commands require Premium and an available Spotify Connect device. Some playlist entries may expose metadata only, because Spotify limits item retrieval to playlists you own or collaborate on. Spotify may change these requirements; consult the official migration guide linked in the README.
-
-## Build a release
-
-Double-click `BUILD_RELEASE.bat`, or run `cargo build --release`. The executable is `target\\release\\aurafy.exe`.
-
-You can also push this folder to GitHub and use **Actions → Build Aurafy for Windows → Run workflow**. The workflow uploads a Windows x64 executable artifact.
-
-
-**Demo data note:** Sample songs and playlist labels are built-in preview content. They are not read from your Spotify account.
-
-**Sign-in troubleshooting:** Aurafy 0.4.0 opens the registered default browser directly and keeps errors visible in Settings → Account. A manual sign-in link remains available for the duration of the attempt, even if automatic browser launch fails. Register both Redirect URIs above if Spotify shows an invalid redirect error. If port 8888 is unavailable, Aurafy automatically tries 43821. If both are unavailable, close another Aurafy instance or the app using those ports.
+For building from source, see the [README](README.md#build-and-contribute).

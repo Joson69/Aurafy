@@ -1100,6 +1100,11 @@ impl AurafyApp {
         clicked
     }
 
+    fn open_spotify_setup(&mut self, ctx: &egui::Context) {
+        self.settings_tab = SettingsTab::Account;
+        self.navigate(Page::Settings, ctx);
+    }
+
     pub(super) fn navigate(&mut self, page: Page, ctx: &egui::Context) {
         if self.page != page || (page == Page::Library && self.selected_playlist.is_some()) {
             self.record_nav();

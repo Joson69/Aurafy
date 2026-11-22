@@ -935,7 +935,7 @@ impl AurafyApp {
             status_message: if configured {
                 "Restoring your music…".into()
             } else {
-                "Demo mode · Connect Spotify to load your music".into()
+                String::new()
             },
             status_until: now + Duration::from_secs(8),
             last_session_save: now,

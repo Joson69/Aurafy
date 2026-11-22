@@ -1,3 +1,7 @@
+## First-run setup
+
+- Demo Home opens Spotify setup directly. Account settings guide users through creating a Spotify app, registering both redirect URLs, and connecting with a Client ID. Local playback setup follows the account controls.
+
 ## Passive repaint hotfix
 
 - Performance/reduced-motion mode uses a once-per-second passive timeline refresh. Normal native clock ticks no longer force immediate repaints; state changes, seeks, volume changes and command confirmations remain immediate.
