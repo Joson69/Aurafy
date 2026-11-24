@@ -717,6 +717,7 @@ impl AurafyApp {
                     match result {
                         Ok(playlist) => {
                             let name = playlist.name.clone();
+                            self.library_revision += 1;
                             self.playlists.insert(0, playlist.clone());
                             self.page = Page::Library;
                             self.set_status(format!("Created playlist ‘{name}’"));
