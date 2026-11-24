@@ -928,6 +928,7 @@ impl eframe::App for AurafyApp {
         if self.window_restore_pending.is_some() {
             ctx.request_repaint_after(Duration::from_millis(20));
         }
+        #[cfg(target_os = "windows")]
         if !self.startup_launch_handled
             && self.window_restore_pending.is_none()
             && self
