@@ -59,6 +59,7 @@ impl Controls {
         smtc.SetIsNextEnabled(true).map_err(|e| e.to_string())?;
         smtc.SetIsPreviousEnabled(true).map_err(|e| e.to_string())?;
         let ctx = cc.egui_ctx.clone();
+        let window = hwnd.0 as usize;
         let handler = TypedEventHandler::<
             SystemMediaTransportControls,
             SystemMediaTransportControlsButtonPressedEventArgs,
@@ -77,6 +78,10 @@ impl Controls {
             if let Some(action) = action {
                 let _ = tx.send(AppEvent::Desktop(action));
                 ctx.request_repaint();
+                use windows_sys::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_PAINT};
+                unsafe {
+                    PostMessageW(window as _, WM_PAINT, 0, 0);
+                }
             }
             Ok(())
         });
