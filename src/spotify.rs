@@ -116,6 +116,14 @@ struct TokenResponse {
     refresh_token: Option<String>,
 }
 
+fn null_as_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 #[derive(Deserialize)]
 struct SearchResponse {
     tracks: Option<TrackPage>,
@@ -124,7 +132,7 @@ struct SearchResponse {
 #[derive(Deserialize)]
 struct TrackPage {
     #[serde(default)]
-    items: Vec<ApiTrack>,
+    items: Vec<Option<ApiTrack>>,
     #[serde(default)]
     next: Option<String>,
     #[serde(default)]
@@ -170,7 +178,7 @@ struct ApiAlbum {
     id: String,
     #[serde(default)]
     name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     images: Vec<ApiImage>,
 }
 
@@ -237,7 +245,7 @@ struct SavedTrackItem {
 #[derive(Deserialize)]
 struct PlaylistPage {
     #[serde(default)]
-    items: Vec<ApiPlaylist>,
+    items: Vec<Option<ApiPlaylist>>,
     next: Option<String>,
 }
 
@@ -249,7 +257,7 @@ struct ApiPlaylist {
     name: String,
     #[serde(default, deserialize_with = "nullable_string")]
     description: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     images: Vec<ApiImage>,
     owner: Option<ApiOwner>,
     items: Option<ApiPlaylistItems>,
@@ -297,7 +305,7 @@ struct ApiProfile {
     id: String,
     #[serde(default)]
     display_name: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     images: Vec<ApiImage>,
     external_urls: Option<ApiExternalUrls>,
 }
@@ -761,7 +769,7 @@ pub fn search_tracks(access_token: &str, query: &str) -> Result<Vec<Track>, Stri
             .map_err(|e| format!("Could not read Spotify search results: {e}"))?;
         let items = data.tracks.map(|page| page.items).unwrap_or_default();
         let page_len = items.len();
-        results.extend(items.into_iter().map(into_track));
+        results.extend(items.into_iter().flatten().map(into_track));
         if page_len < 10 {
             break;
         }
@@ -902,7 +910,7 @@ fn get_playlists_from(
             .json()
             .map_err(|e| format!("Could not parse your playlists: {e}"))?;
         let count = page.items.len();
-        playlists.extend(page.items.into_iter().map(into_playlist));
+        playlists.extend(page.items.into_iter().flatten().map(into_playlist));
         if count == 0 || page.next.is_none() {
             break;
         }
