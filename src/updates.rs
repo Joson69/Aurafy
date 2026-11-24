@@ -33,9 +33,9 @@ struct GitLabRelease {
     #[serde(default)]
     tag_name: String,
     #[serde(default)]
-    name: String,
+    name: Option<String>,
     #[serde(default)]
-    description: String,
+    description: Option<String>,
     #[serde(default)]
     released_at: Option<String>,
     #[serde(rename = "_links", default)]
@@ -86,16 +86,21 @@ pub fn parse_gitlab_releases(body: &str, current_version: &str) -> Result<CheckO
             })
         })
         .unwrap_or_else(|| RELEASES_URL.to_string());
-    let name = if best.name.trim().is_empty() {
+    let name = if best.name.as_deref().unwrap_or_default().trim().is_empty() {
         best.tag_name.clone()
     } else {
-        best.name.trim().to_string()
+        best.name.as_deref().unwrap_or_default().trim().to_string()
     };
     let info = ReleaseInfo {
         tag: best.tag_name.trim().to_string(),
         name,
         url,
-        notes: best.description.trim().to_string(),
+        notes: best
+            .description
+            .as_deref()
+            .unwrap_or_default()
+            .trim()
+            .to_string(),
         published_at: best.released_at,
     };
     if is_newer(&info.tag, current_version) {
