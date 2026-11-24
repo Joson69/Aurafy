@@ -31,15 +31,6 @@ impl AurafyApp {
         self.config.effective_device_name()
     }
 
-    pub(crate) fn local_device_name_ref(&self) -> &str {
-        let trimmed = self.config.connect_device_name.trim();
-        if trimmed.is_empty() {
-            local_player::DEVICE_NAME
-        } else {
-            trimmed
-        }
-    }
-
     pub(crate) fn playback_devices(&self) -> Vec<Device> {
         let mut devices = self.devices.clone();
         if self.local_status.paired && self.local_player.is_some() {
@@ -153,7 +144,7 @@ impl AurafyApp {
     pub(crate) fn transfer_to_device(&mut self, device: Device, ctx: &egui::Context) {
         self.volume_control = volume::Control::default();
         self.resume_on_local_ready = false;
-        if device.name == self.local_device_name_ref() && self.local_status.paired {
+        if device.name == self.local_device_name() && self.local_status.paired {
             self.listen_here(ctx);
             return;
         }
@@ -315,11 +306,11 @@ impl AurafyApp {
         self.use_local_playback()
     }
 
-    pub(crate) fn selected_output_name(&self) -> Option<&str> {
+    pub(crate) fn selected_output_name(&self) -> Option<String> {
         if self.use_local_playback() {
-            Some(self.local_device_name_ref())
+            Some(self.local_device_name())
         } else {
-            self.device_name.as_deref()
+            self.device_name.clone()
         }
     }
 

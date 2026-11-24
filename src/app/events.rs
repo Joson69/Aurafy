@@ -476,7 +476,9 @@ impl AurafyApp {
                                     }
                                 }
                                 value if value.starts_with("device:") => {
-                                    if value != "device:Aurafy" {
+                                    if value.strip_prefix("device:")
+                                        != Some(self.local_device_name().as_str())
+                                    {
                                         self.select_local_on_ready = false;
                                         self.follow_remote_device = true;
                                     }

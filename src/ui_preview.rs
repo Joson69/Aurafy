@@ -787,7 +787,7 @@ fn main_play_uses_selected_auralis_after_a_paused_start_releases_activity() {
         .unwrap();
     app.handle_events(&ctx);
     assert!(!app.follow_remote_device);
-    assert_eq!(app.selected_output_name(), Some("Aurafy"));
+    assert_eq!(app.selected_output_name().as_deref(), Some("Aurafy"));
     assert!(
         app.playback_devices()[0].is_active,
         "the paused local output stays selected"
@@ -3539,7 +3539,7 @@ fn custom_connect_device_name_sanitizes_and_drives_local_output() {
     app.config.connect_device_name = "Studio PC".into();
     app.local_status.paired = true;
     app.local_status.active = true;
-    assert_eq!(app.selected_output_name(), Some("Studio PC"));
+    assert_eq!(app.selected_output_name().as_deref(), Some("Studio PC"));
     let devices = app.playback_devices();
     assert_eq!(devices[0].id, "auralis-local");
     assert_eq!(devices[0].name, "Studio PC");
