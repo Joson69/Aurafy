@@ -218,12 +218,22 @@ fn engine_path() -> Result<PathBuf, String> {
 
 #[cfg(windows)]
 fn install_engine(path: &std::path::Path) -> Result<(), String> {
+    static INSTALL: Mutex<()> = Mutex::new(());
+    let _install = INSTALL
+        .lock()
+        .map_err(|_| "Playback engine installation is unavailable")?;
+    if path.is_file() {
+        return Ok(());
+    }
     let destination = path
         .parent()
         .ok_or("Could not locate the playback engine folder")?;
     fs::create_dir_all(destination)
         .map_err(|e| format!("Could not create playback engine folder: {e}"))?;
-    let archive = directory().join("soloist-download.zip");
+    let archive = directory().join(format!(
+        "soloist-download-{:016x}.zip",
+        rand::random::<u64>()
+    ));
     let response = spotify::http_client()?.get(DOWNLOAD).send()
         .map_err(|_| "Could not download Spotify's playback engine. Check your internet connection and try again.".to_string())?
         .error_for_status().map_err(|e| format!("Playback engine download failed: {e}"))?;
