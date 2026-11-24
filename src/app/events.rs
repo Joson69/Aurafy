@@ -982,7 +982,11 @@ impl eframe::App for AurafyApp {
             self.show_settings = false;
         }
 
-        if !ctx.wants_keyboard_input() {
+        let slider_focus =
+            ctx.data(|data| data.get_temp::<egui::Id>(egui::Id::new("player-slider-focus")));
+        let slider_has_focus =
+            slider_focus.is_some() && ctx.memory(|memory| memory.focused()) == slider_focus;
+        if !ctx.wants_keyboard_input() || slider_has_focus {
             let (toggle, previous, next, quit, seek_back, seek_forward, volume_down, volume_up) =
                 ctx.input(|input| {
                     (

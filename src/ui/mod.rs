@@ -948,8 +948,12 @@ fn player_slider(ui: &mut Ui, value: &mut f32, width: f32, label: &str) -> egui:
         response.request_focus();
     }
     if response.has_focus() {
+        ui.ctx()
+            .data_mut(|data| data.insert_temp(Id::new("player-slider-focus"), response.id));
         let delta = ui.input(|i| {
-            if i.key_pressed(Key::ArrowRight) {
+            if i.modifiers.any() {
+                0.0
+            } else if i.key_pressed(Key::ArrowRight) {
                 0.01
             } else if i.key_pressed(Key::ArrowLeft) {
                 -0.01
