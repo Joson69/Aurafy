@@ -138,12 +138,8 @@ pub(crate) struct AppConfig {
     pub(crate) connect_device_name: String,
     pub(crate) dj_model: String,
     pub(crate) language: i18n::Language,
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub(crate) ad_blocker: bool,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 #[derive(Clone, Serialize, Deserialize)]
