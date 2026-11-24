@@ -282,7 +282,7 @@ fn artist_songs_from(
                     .filter(|track| track.artist_ids.iter().any(|credit| credit == id))
                     .collect()
             }
-            Err(error) if error.contains("429") => return Err(error),
+            Err(error) if error == super::RATE_LIMIT_ERROR => return Err(error),
             Err(_) => {}
         }
     }

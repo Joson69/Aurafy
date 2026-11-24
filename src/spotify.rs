@@ -21,6 +21,7 @@ pub mod playback;
 pub const REDIRECT_URI: &str = "http://127.0.0.1:8888/callback";
 pub const FALLBACK_REDIRECT_URI: &str = "http://127.0.0.1:43821/callback";
 const API_BASE: &str = "https://api.spotify.com/v1";
+const RATE_LIMIT_ERROR: &str = "Spotify rate limit reached. Wait a moment and try again.";
 const TOKEN_URL: &str = "https://accounts.spotify.com/api/token";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(18);
 
@@ -380,7 +381,7 @@ fn checked_response(response: Response, context: &str) -> Result<Response, Strin
         401 => "Spotify authorization expired. Reconnect Spotify.".to_string(),
         403 => "Spotify denied this action. Check Premium, app access, and requested permissions."
             .to_string(),
-        429 => "Spotify rate limit reached. Wait a moment and try again.".to_string(),
+        429 => RATE_LIMIT_ERROR.to_owned(),
         404 => PLAYBACK_NOT_FOUND.to_owned(),
         _ if message.is_empty() => format!("HTTP {status}"),
         _ => format!("HTTP {status}: {message}"),
