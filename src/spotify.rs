@@ -29,6 +29,16 @@ pub struct TokenState {
     pub access_token: String,
     pub refresh_token: Option<String>,
     pub expires_at: Instant,
+    pub(crate) revision: u64,
+    pub(crate) refresh_cache: std::sync::Arc<std::sync::Mutex<Option<TokenSnapshot>>>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct TokenSnapshot {
+    access_token: String,
+    refresh_token: Option<String>,
+    expires_at: Instant,
+    revision: u64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -498,6 +508,8 @@ fn exchange_code(
         access_token: token.access_token,
         refresh_token: token.refresh_token,
         expires_at: Instant::now() + Duration::from_secs(token.expires_in),
+        revision: 0,
+        refresh_cache: Default::default(),
     })
 }
 
@@ -665,6 +677,20 @@ fn wait_for_callback(
 }
 
 pub fn refresh_if_needed(mut token: TokenState, client_id: &str) -> Result<TokenState, String> {
+    // Every job for this login shares the same refresh result, including rotations.
+    let cache = token.refresh_cache.clone();
+    let mut latest = cache
+        .lock()
+        .map_err(|_| "Spotify refresh state is unavailable")?;
+    if let Some(snapshot) = latest
+        .as_ref()
+        .filter(|snapshot| snapshot.revision > token.revision)
+    {
+        token.access_token.clone_from(&snapshot.access_token);
+        token.refresh_token.clone_from(&snapshot.refresh_token);
+        token.expires_at = snapshot.expires_at;
+        token.revision = snapshot.revision;
+    }
     if Instant::now() + Duration::from_secs(45) < token.expires_at {
         return Ok(token);
     }
@@ -689,6 +715,13 @@ pub fn refresh_if_needed(mut token: TokenState, client_id: &str) -> Result<Token
         token.refresh_token = refreshed.refresh_token;
     }
     token.expires_at = Instant::now() + Duration::from_secs(refreshed.expires_in);
+    token.revision += 1;
+    *latest = Some(TokenSnapshot {
+        access_token: token.access_token.clone(),
+        refresh_token: token.refresh_token.clone(),
+        expires_at: token.expires_at,
+        revision: token.revision,
+    });
     Ok(token)
 }
 
@@ -697,6 +730,8 @@ pub fn restore_session(refresh_token: &str, client_id: &str) -> Result<TokenStat
         access_token: String::new(),
         refresh_token: Some(refresh_token.to_owned()),
         expires_at: Instant::now(),
+        revision: 0,
+        refresh_cache: Default::default(),
     };
     refresh_if_needed(token, client_id)
 }

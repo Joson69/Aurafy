@@ -137,6 +137,8 @@ fn fixture(ctx: &egui::Context) -> AurafyApp {
         access_token: "preview-only".into(),
         refresh_token: None,
         expires_at: Instant::now() + Duration::from_secs(3600),
+        revision: 0,
+        refresh_cache: Default::default(),
     });
     app.user_name = Some("grid".into());
     app.user_profile = Some(spotify::UserProfile {
@@ -527,6 +529,8 @@ fn play_here_uses_the_restored_native_player_without_web_device_discovery() {
         access_token: "test-only".into(),
         refresh_token: None,
         expires_at: Instant::now() + Duration::from_secs(300),
+        revision: 0,
+        refresh_cache: Default::default(),
     });
     app.current_track = real_track("phone");
     app.device_name = Some("Phone".into());
@@ -579,6 +583,8 @@ fn device_list_keeps_the_ready_local_receiver_and_background_refresh_is_quiet() 
         access_token: "test-only".into(),
         refresh_token: None,
         expires_at: Instant::now() + Duration::from_secs(300),
+        revision: 0,
+        refresh_cache: Default::default(),
     });
     app.next_devices_poll = Instant::now();
     assert!(
@@ -3380,6 +3386,8 @@ fn top_music_ignores_signed_out_response() {
                 access_token: "stale".into(),
                 refresh_token: None,
                 expires_at: Instant::now() + Duration::from_secs(600),
+                revision: 0,
+                refresh_cache: Default::default(),
             }),
         })
         .unwrap();
@@ -3788,6 +3796,8 @@ fn track_table_sorting_preserves_context_position_on_playback() {
         access_token: "test-only".into(),
         refresh_token: None,
         expires_at: Instant::now() + Duration::from_secs(300),
+        revision: 0,
+        refresh_cache: Default::default(),
     });
     app.local_status.active = true;
     app.page = Page::Library;
@@ -4174,6 +4184,8 @@ fn search_play_keeps_manual_entries_and_restores_spotify_queue() {
         access_token: "test-only".into(),
         refresh_token: None,
         expires_at: Instant::now() + Duration::from_secs(300),
+        revision: 0,
+        refresh_cache: Default::default(),
     });
     let playlist = Playlist {
         id: "pl_q".into(),
@@ -4272,6 +4284,8 @@ fn autoplay_continues_after_queue_empties_unless_cleared() {
         access_token: "test-token".into(),
         refresh_token: None,
         expires_at: Instant::now() + Duration::from_secs(3600),
+        revision: 0,
+        refresh_cache: Default::default(),
     });
 
     let mut first = real_track(&format!("{:0>22}", 910));

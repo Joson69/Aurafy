@@ -1206,6 +1206,12 @@ impl AurafyApp {
     }
 
     pub(crate) fn accept_token(&mut self, token: TokenState) {
+        if self.token.as_ref().is_some_and(|current| {
+            Arc::ptr_eq(&current.refresh_cache, &token.refresh_cache)
+                && token.revision < current.revision
+        }) {
+            return;
+        }
         // Spotify may rotate the refresh token. Keep the newest one in the OS keychain.
         let old_refresh = self
             .token
