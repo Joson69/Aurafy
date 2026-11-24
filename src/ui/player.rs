@@ -188,34 +188,38 @@ impl AurafyApp {
             .show(ctx, |ui| {
                 let lang = self.config.language;
                 ui.horizontal(|ui| {
-                    if ui
-                        .add(pill(
-                            i18n::tr(lang, i18n::Text::Queue),
-                            !self.queue_show_recent,
-                            ctx,
-                        ))
-                        .clicked()
-                    {
-                        self.queue_show_recent = false;
+                    ui.allocate_ui_with_layout(
+                        Vec2::new((ui.available_width() - 34.0).max(0.0), 0.0),
+                        Layout::left_to_right(Align::Center).with_main_wrap(true),
+                        |ui| {
+                            if ui
+                                .add(pill(
+                                    i18n::tr(lang, i18n::Text::Queue),
+                                    !self.queue_show_recent,
+                                    ctx,
+                                ))
+                                .clicked()
+                            {
+                                self.queue_show_recent = false;
+                            }
+                            if ui
+                                .add(pill(
+                                    i18n::tr(lang, i18n::Text::RecentlyPlayed),
+                                    self.queue_show_recent,
+                                    ctx,
+                                ))
+                                .clicked()
+                            {
+                                self.queue_show_recent = true;
+                                self.load_home_data(ctx);
+                            }
+                        },
+                    );
+                    if icon_button(ui, Icon::Close, "Close queue", false).clicked() {
+                        self.show_queue = false;
+                        self.config.queue_open = false;
+                        self.persist_preferences();
                     }
-                    if ui
-                        .add(pill(
-                            i18n::tr(lang, i18n::Text::RecentlyPlayed),
-                            self.queue_show_recent,
-                            ctx,
-                        ))
-                        .clicked()
-                    {
-                        self.queue_show_recent = true;
-                        self.load_home_data(ctx);
-                    }
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if icon_button(ui, Icon::Close, "Close queue", false).clicked() {
-                            self.show_queue = false;
-                            self.config.queue_open = false;
-                            self.persist_preferences();
-                        }
-                    });
                 });
                 ui.add_space(17.0);
                 if self.queue_show_recent {
