@@ -773,7 +773,9 @@ impl AurafyApp {
                 }
             }
         }
-        if let Some(ended_uri) = ended {
+        if let Some(ended_uri) = ended
+            && ended_uri == self.current_track.uri
+        {
             if self.repeat_state == "track" && !self.current_track.uri.is_empty() {
                 self.dispatch_track_play(self.current_track.clone(), ctx);
             } else if !self.priority_queue.is_empty() {

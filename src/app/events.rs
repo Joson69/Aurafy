@@ -476,6 +476,7 @@ impl AurafyApp {
                                     }
                                 }
                                 value if value.starts_with("device:") => {
+                                    self.stop_free_player();
                                     if value.strip_prefix("device:")
                                         != Some(self.local_device_name().as_str())
                                     {

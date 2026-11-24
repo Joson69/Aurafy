@@ -273,13 +273,13 @@ fn run_worker(
     ctx: eframe::egui::Context,
 ) {
     use windows::{
-        Foundation::Uri,
+        Foundation::{TypedEventHandler, Uri},
         Media::{
             Core::MediaSource,
             Playback::{MediaPlaybackState, MediaPlayer},
         },
         Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx},
-        core::HSTRING,
+        core::{HSTRING, IInspectable},
     };
 
     unsafe {
@@ -298,8 +298,7 @@ fn run_worker(
     let mut cache: HashMap<String, CachedStream> = HashMap::new();
     let mut current_uri: Option<String> = None;
     let mut current_duration_ms: u64 = 0;
-    let mut ended_reported = false;
-    let mut user_paused = false;
+    let mut completion: Option<(i64, Receiver<()>)> = None;
     let mut last_tick = Instant::now();
 
     loop {
@@ -316,6 +315,9 @@ fn run_worker(
                 FreeCommand::Play(track) => {
                     let uri_key = track.uri.clone();
                     let _ = player.Pause();
+                    if let Some((token, _)) = completion.take() {
+                        let _ = player.RemoveMediaEnded(token);
+                    }
                     current_uri = None;
 
                     let cached = cache
@@ -346,9 +348,20 @@ fn run_worker(
                             if let Ok(win_uri) = Uri::CreateUri(&HSTRING::from(&url))
                                 && let Ok(source) = MediaSource::CreateFromUri(&win_uri)
                             {
-                                if let Err(err) =
-                                    player.SetSource(&source).and_then(|_| player.Play())
-                                {
+                                let (ended_tx, ended_rx) = mpsc::channel();
+                                let handler = TypedEventHandler::<MediaPlayer, IInspectable>::new(
+                                    move |_, _| {
+                                        let _ = ended_tx.send(());
+                                        Ok(())
+                                    },
+                                );
+                                let started = (|| {
+                                    player.SetSource(&source)?;
+                                    let token = player.MediaEnded(&handler)?;
+                                    completion = Some((token, ended_rx));
+                                    player.Play()
+                                })();
+                                if let Err(err) = started {
                                     let _ = evt_tx.send(FreeEvent::Error(format!(
                                         "Could not start resolved audio: {err}"
                                     )));
@@ -357,8 +370,6 @@ fn run_worker(
                                 }
                                 current_uri = Some(uri_key.clone());
                                 current_duration_ms = track.duration_ms.max(1);
-                                ended_reported = false;
-                                user_paused = false;
                                 let _ = evt_tx.send(FreeEvent::State {
                                     uri: uri_key,
                                     is_playing: true,
@@ -379,16 +390,12 @@ fn run_worker(
                     }
                 }
                 FreeCommand::Pause => {
-                    user_paused = true;
                     let _ = player.Pause();
                 }
                 FreeCommand::Resume => {
-                    user_paused = false;
-                    ended_reported = false;
                     let _ = player.Play();
                 }
                 FreeCommand::Seek(ms) => {
-                    ended_reported = false;
                     if let Ok(session) = player.PlaybackSession() {
                         let ticks = (ms as i64) * 10_000;
                         let _ =
@@ -425,13 +432,10 @@ fn run_worker(
                     || state == MediaPlaybackState::Buffering
                     || state == MediaPlaybackState::Opening;
 
-                if !ended_reported
-                    && !user_paused
-                    && dur_ms > 1500
-                    && state == MediaPlaybackState::Paused
-                    && pos_ms.saturating_add(800) >= dur_ms
+                if completion
+                    .as_ref()
+                    .is_some_and(|(_, ended)| ended.try_recv().is_ok())
                 {
-                    ended_reported = true;
                     let _ = evt_tx.send(FreeEvent::Ended(uri.clone()));
                     ctx.request_repaint();
                 } else {
