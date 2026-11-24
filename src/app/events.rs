@@ -252,6 +252,9 @@ impl AurafyApp {
                         .is_some_and(|cancelled| cancelled.load(Ordering::Relaxed));
                     if cancelled {
                         self.auth_error = None;
+                        self.search_loading = false;
+                        self.artist_loading = false;
+                        self.browse.album_loading = false;
                         self.set_status("Spotify sign-in cancelled · You can connect again");
                         continue;
                     }
@@ -309,6 +312,8 @@ impl AurafyApp {
                         Err(error) => {
                             self.auth_error = Some(error.clone());
                             self.search_loading = false;
+                            self.artist_loading = false;
+                            self.browse.album_loading = false;
                             if self.page == Page::Search {
                                 self.search_error = Some(error.clone());
                             }

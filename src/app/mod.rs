@@ -681,6 +681,11 @@ impl AurafyApp {
                 app.set_status("Restoring your Spotify session…");
             }
         }
+        if !app.auth_in_progress {
+            app.search_loading = false;
+            app.artist_loading = false;
+            app.browse.album_loading = false;
+        }
         if app.config.local_playback {
             app.enable_local_playback(&cc.egui_ctx);
         }
