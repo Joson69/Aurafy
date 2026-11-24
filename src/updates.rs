@@ -77,7 +77,14 @@ pub fn parse_gitlab_releases(body: &str, current_version: &str) -> Result<CheckO
     let url = best
         .links
         .map(|links| links.self_url)
-        .filter(|url| !url.trim().is_empty())
+        .filter(|url| {
+            url::Url::parse(url).is_ok_and(|parsed| {
+                parsed.scheme() == "https"
+                    && parsed.host_str() == Some("gitlab.com")
+                    && parsed.username().is_empty()
+                    && parsed.password().is_none()
+            })
+        })
         .unwrap_or_else(|| RELEASES_URL.to_string());
     let name = if best.name.trim().is_empty() {
         best.tag_name.clone()
