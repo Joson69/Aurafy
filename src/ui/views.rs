@@ -1427,8 +1427,9 @@ impl AurafyApp {
                                                 card_rect.right_bottom() - Vec2::splat(34.0),
                                                 Vec2::splat(44.0),
                                             );
-                                            let playing_top = self.current_track.uri == top.uri
-                                                && self.is_playing;
+                                            let current_top = !top.id.is_empty()
+                                                && top.id == self.current_track.id;
+                                            let playing_top = current_top && self.is_playing;
                                             let play_resp = playlist_play_at(
                                                 ui,
                                                 play_rect,
@@ -1445,9 +1446,7 @@ impl AurafyApp {
                                             {
                                                 if playing_top {
                                                     self.send_playback_action("pause", ctx);
-                                                } else if self.current_track.uri == top.uri
-                                                    && !self.is_playing
-                                                {
+                                                } else if current_top {
                                                     self.send_playback_action("resume", ctx);
                                                 } else {
                                                     self.play_search_track(top, ctx);
@@ -1469,7 +1468,8 @@ impl AurafyApp {
                                                     Vec2::new(right_w, 46.0),
                                                     Sense::click(),
                                                 );
-                                                let current = track.uri == self.current_track.uri;
+                                                let current = !track.id.is_empty()
+                                                    && track.id == self.current_track.id;
                                                 if resp.hovered() {
                                                     ui.painter().rect_filled(r, 7.0, colours.hover);
                                                 }
