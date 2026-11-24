@@ -447,10 +447,9 @@ impl AurafyApp {
             return false;
         }
         if !self.playlist_tracks.is_empty()
-            && self
-                .selected_playlist
-                .as_ref()
-                .is_some_and(|selected| selected.id == playlist_id)
+            && self.selected_playlist.as_ref().is_some_and(|selected| {
+                selected.id == playlist_id && selected.total_items <= self.playlist_tracks.len()
+            })
         {
             if !self.current_track.uri.is_empty()
                 && !self
@@ -498,7 +497,7 @@ impl AurafyApp {
             })
             .unwrap_or_else(|| start_position.min(valid.len().saturating_sub(1)));
         let first = valid[start_idx].clone();
-        let remaining: Vec<Track> = valid.into_iter().skip(start_idx + 1).take(1000).collect();
+        let remaining: Vec<Track> = valid.into_iter().skip(start_idx + 1).collect();
         self.suppress_upstream_queue = true;
         self.queue_cleared_by_user = false;
         self.autoplay_pending = false;
@@ -521,11 +520,10 @@ impl AurafyApp {
     }
 
     fn collection_tracks_for(&self, uri: &str) -> Option<Vec<Track>> {
-        if self
-            .selected_playlist
-            .as_ref()
-            .is_some_and(|p| format!("spotify:playlist:{}", p.id) == uri)
-            && !self.playlist_tracks.is_empty()
+        if self.selected_playlist.as_ref().is_some_and(|p| {
+            format!("spotify:playlist:{}", p.id) == uri
+                && p.total_items <= self.playlist_tracks.len()
+        }) && !self.playlist_tracks.is_empty()
         {
             let tracks: Vec<Track> = self
                 .playlist_tracks
@@ -609,7 +607,7 @@ impl AurafyApp {
                         Ok(token) => {
                             let res = if let Some(id) = start.uri.strip_prefix("spotify:playlist:")
                             {
-                                spotify::get_playlist_items(&token.access_token, id)
+                                spotify::get_playlist_playback_items(&token.access_token, id)
                             } else if let Some(id) = start.uri.strip_prefix("spotify:album:") {
                                 spotify::catalog::album_details(&token.access_token, id)
                                     .map(|details| details.tracks)
