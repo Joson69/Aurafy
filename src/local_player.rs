@@ -500,6 +500,10 @@ fn observe(
     notify: &impl Fn(Event),
 ) -> Result<(), String> {
     let mut state = State {
+        playback: PlaybackState {
+            device_name: Some(device_name.clone()),
+            ..State::default().playback
+        },
         device_name,
         ..Default::default()
     };
@@ -814,7 +818,11 @@ impl Default for State {
         Self {
             device_name: DEVICE_NAME.into(),
             status: Status::default(),
-            playback: PlaybackState::default(),
+            playback: PlaybackState {
+                device_name: Some(DEVICE_NAME.into()),
+                repeat_state: "off".into(),
+                ..Default::default()
+            },
             progress_anchor: Instant::now(),
             auth_started: Instant::now(),
             queue_dirty: true,
