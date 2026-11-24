@@ -1096,14 +1096,16 @@ pub fn get_playlist_uris(
     Err("Playlist membership exceeded the supported limit".into())
 }
 
+pub(crate) const PLAYLIST_PREVIEW_LIMIT: usize = 150;
+
 pub fn get_playlist_playback_items(
     access_token: &str,
     playlist_id: &str,
 ) -> Result<Vec<Track>, String> {
     let client = http_client()?;
     let mut tracks = Vec::new();
-    for page in 0..2000 {
-        let offset = page * 50;
+    let mut offset = 0;
+    for _ in 0..2000 {
         let data = playlist_items_page(&client, access_token, playlist_id, offset)?;
         let page_len = data.items.len();
         let has_next = data.next.is_some();
@@ -1111,6 +1113,7 @@ pub fn get_playlist_playback_items(
         if !has_next || page_len == 0 {
             return Ok(tracks);
         }
+        offset += page_len;
     }
     Err("Playlist exceeded the supported playback limit".into())
 }
@@ -1118,7 +1121,7 @@ pub fn get_playlist_playback_items(
 pub fn get_playlist_items(access_token: &str, playlist_id: &str) -> Result<Vec<Track>, String> {
     let client = http_client()?;
     let mut tracks = Vec::new();
-    for offset in [0, 50, 100] {
+    for offset in (0..PLAYLIST_PREVIEW_LIMIT).step_by(50) {
         let data = playlist_items_page(&client, access_token, playlist_id, offset)?;
         let page_len = data.items.len();
         tracks.extend(playlist_page_tracks(data, offset));

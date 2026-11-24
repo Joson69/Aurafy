@@ -448,7 +448,8 @@ impl AurafyApp {
         }
         if !self.playlist_tracks.is_empty()
             && self.selected_playlist.as_ref().is_some_and(|selected| {
-                selected.id == playlist_id && selected.total_items <= self.playlist_tracks.len()
+                selected.id == playlist_id
+                    && selected.total_items <= spotify::PLAYLIST_PREVIEW_LIMIT
             })
         {
             if !self.current_track.uri.is_empty()
@@ -522,7 +523,9 @@ impl AurafyApp {
     fn collection_tracks_for(&self, uri: &str) -> Option<Vec<Track>> {
         if self.selected_playlist.as_ref().is_some_and(|p| {
             format!("spotify:playlist:{}", p.id) == uri
-                && p.total_items <= self.playlist_tracks.len()
+                && p.total_items <= spotify::PLAYLIST_PREVIEW_LIMIT
+                && (p.total_items != 0
+                    || self.playlist_tracks.len() < spotify::PLAYLIST_PREVIEW_LIMIT)
         }) && !self.playlist_tracks.is_empty()
         {
             let tracks: Vec<Track> = self
