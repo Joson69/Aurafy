@@ -100,6 +100,7 @@ dependencies = [
  "rand 0.8.8",
  "raw-window-handle",
  "reqwest",
+ "semver",
  "serde",
  "serde_json",
  "sha2",
