@@ -682,6 +682,77 @@ fn startup_selects_local_once_and_does_not_reclaim_a_phone_handoff() {
 }
 
 #[test]
+fn closed_remote_device_falls_back_to_aurafy_on_play() {
+    let ctx = egui::Context::default();
+    let (mut app, rx) = local_fixture(&ctx);
+    app.select_local_on_ready = false;
+    for event in [
+        AppEvent::PlayerSynced {
+            playback: Ok(None),
+            queue: None,
+            token: None,
+        },
+        AppEvent::ActionFinished {
+            action: "resume".into(),
+            result: Err(spotify::PLAYBACK_NOT_FOUND.into()),
+            token: None,
+        },
+    ] {
+        app.follow_remote_device = true;
+        app.device_name = Some("Spotify Desktop".into());
+        app.device_id = Some("desktop".into());
+        let missed_play = matches!(&event, AppEvent::ActionFinished { .. });
+        app.tx.send(event).unwrap();
+        app.handle_events(&ctx);
+        assert!(!app.follow_remote_device);
+        assert!(app.selected_output_name().is_some());
+        if !missed_play {
+            assert!(
+                rx.try_recv().is_err(),
+                "no automatic playback when Spotify closes"
+            );
+            app.send_playback_action("resume", &ctx);
+        }
+        assert_eq!(
+            rx.try_recv().unwrap().requests,
+            vec![
+                local_player::request("activate"),
+                local_player::request("play")
+            ]
+        );
+        assert!(rx.try_recv().is_err());
+    }
+}
+
+#[test]
+fn play_during_paused_start_resumes_once_when_receiver_is_ready() {
+    let ctx = egui::Context::default();
+    let (mut app, rx) = local_fixture(&ctx);
+    app.config.pause_on_start = true;
+    app.local_starting = true;
+    app.local_status.paired = false;
+    app.send_playback_action("resume", &ctx);
+    assert!(rx.try_recv().is_err());
+    app.handle_local_event_with_ctx(
+        local_player::Event::Status(local_player::Status {
+            running: true,
+            paired: true,
+            ..Default::default()
+        }),
+        Some(&ctx),
+    );
+    assert_eq!(
+        rx.try_recv().unwrap().requests,
+        vec![
+            local_player::request("activate"),
+            local_player::request("play")
+        ]
+    );
+    assert!(rx.try_recv().is_err());
+    assert!(app.config.pause_on_start);
+}
+
+#[test]
 fn main_play_uses_selected_auralis_after_a_paused_start_releases_activity() {
     let ctx = egui::Context::default();
     let (mut app, rx) = local_fixture(&ctx);
