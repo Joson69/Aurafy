@@ -1054,7 +1054,7 @@ impl AurafyApp {
                             6.0,
                             Color32::from_rgba_unmultiplied(0, 0, 0, 145),
                         );
-                        icon_at(ui, art, Icon::Play, colours.text);
+                        icon_at(ui, art, Icon::Play, Color32::WHITE);
                     }
                     text(
                         ui,
@@ -2524,7 +2524,7 @@ impl AurafyApp {
                             Rect::from_min_size(rect.min + Vec2::new(4.0, 8.0), Vec2::splat(36.0));
                         ui.painter()
                             .rect_filled(art, 5.0, Color32::from_rgb(89, 66, 156));
-                        icon_at(ui, art.shrink(5.0), Icon::Heart, colours.text);
+                        icon_at(ui, art.shrink(5.0), Icon::Heart, Color32::WHITE);
                         text(
                             ui,
                             rect.min + Vec2::new(50.0, 8.0),

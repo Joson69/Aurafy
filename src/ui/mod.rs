@@ -477,6 +477,8 @@ pub(crate) fn icon_button(ui: &mut Ui, kind: Icon, label: &str, active: bool) ->
         kind,
         if active {
             colours.green
+        } else if response.hovered() && matches!(kind, Icon::Close) {
+            Color32::WHITE
         } else if response.hovered() {
             colours.text
         } else {
@@ -567,11 +569,9 @@ fn playlist_play_at(
         rect.center(),
         rect.width() * 0.5,
         if response.hovered() {
-            if colours.dark {
-                Color32::from_rgb(147, 240, 199)
-            } else {
-                Color32::from_rgb(0, 92, 60)
-            }
+            colours
+                .green
+                .gamma_multiply(if colours.dark { 1.12 } else { 0.86 })
         } else {
             colours.green
         },
