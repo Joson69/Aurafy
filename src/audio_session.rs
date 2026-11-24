@@ -14,31 +14,51 @@ pub fn start() {
             let mut seen = std::collections::HashSet::new();
             loop {
                 let result = (|| -> windows::core::Result<()> {
-                    let pid = std::fs::read_to_string(
-                        crate::local_player::directory().join("data/soloist.pid"),
-                    )
-                    .ok()
-                    .and_then(|s| s.trim().parse::<u32>().ok())
-                    .unwrap_or(0);
-                    if pid == 0 {
+                    let Some(engine) = crate::local_player::existing_engine_path() else {
                         return Ok(());
-                    }
+                    };
+                    let data = crate::local_player::directory().join("data");
+                    let Some((pid, _receiver)) =
+                        crate::player_process::recorded_receiver(&engine, &data, 0)
+                    else {
+                        return Ok(());
+                    };
                     let enumerator: IMMDeviceEnumerator =
                         CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
                     let endpoints = enumerator.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE)?;
                     for device in 0..endpoints.GetCount()? {
-                        let endpoint = endpoints.Item(device)?;
-                        let manager: IAudioSessionManager2 = endpoint.Activate(CLSCTX_ALL, None)?;
-                        let sessions = manager.GetSessionEnumerator()?;
-                        for i in 0..sessions.GetCount()? {
-                            let session = sessions.GetSession(i)?;
-                            let control: IAudioSessionControl2 = session.cast()?;
-                            if control.GetProcessId()? != pid {
+                        let Ok(endpoint) = endpoints.Item(device) else {
+                            continue;
+                        };
+                        let Ok(manager) =
+                            endpoint.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None)
+                        else {
+                            continue;
+                        };
+                        let Ok(sessions) = manager.GetSessionEnumerator() else {
+                            continue;
+                        };
+                        let Ok(count) = sessions.GetCount() else {
+                            continue;
+                        };
+                        for i in 0..count {
+                            let Ok(session) = sessions.GetSession(i) else {
+                                continue;
+                            };
+                            let Ok(control) = session.cast::<IAudioSessionControl2>() else {
+                                continue;
+                            };
+                            if control.GetProcessId().ok() != Some(pid) {
                                 continue;
                             }
-                            let identifier = control.GetSessionInstanceIdentifier()?;
-                            let identity = identifier.to_string()?;
+                            let Ok(identifier) = control.GetSessionInstanceIdentifier() else {
+                                continue;
+                            };
+                            let identity = identifier.to_string();
                             CoTaskMemFree(Some(identifier.0.cast()));
+                            let Ok(identity) = identity else {
+                                continue;
+                            };
                             if seen.contains(&identity) {
                                 continue;
                             }
@@ -49,9 +69,15 @@ pub fn start() {
                                 .encode_utf16()
                                 .chain(Some(0))
                                 .collect();
-                            session
-                                .SetDisplayName(windows::core::w!("Aurafy"), std::ptr::null())?;
-                            session.SetIconPath(PCWSTR(wide.as_ptr()), std::ptr::null())?;
+                            if session
+                                .SetDisplayName(windows::core::w!("Aurafy"), std::ptr::null())
+                                .is_err()
+                                || session
+                                    .SetIconPath(PCWSTR(wide.as_ptr()), std::ptr::null())
+                                    .is_err()
+                            {
+                                continue;
+                            }
                             if seen.len() >= 64 {
                                 seen.clear();
                             }

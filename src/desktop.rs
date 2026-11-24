@@ -578,10 +578,14 @@ impl Tray {
         _: &eframe::CreationContext<'_>,
         _: std::sync::mpsc::Sender<crate::AppEvent>,
         _: u128,
+        _: crate::appearance::TrayStyle,
     ) -> Result<Self, String> {
         Err("Tray integration is available on Windows.".into())
     }
     pub fn update(&mut self, _: bool, _: &str, _: &str) {}
+    pub fn set_style(&self, _: crate::appearance::TrayStyle) -> Result<(), String> {
+        Ok(())
+    }
     pub fn registered(&self) -> bool {
         false
     }

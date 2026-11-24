@@ -74,7 +74,7 @@ impl AurafyApp {
         self.membership_loading = true;
         #[cfg(not(test))]
         {
-            let tx = self.tx.clone();
+            let tx = self.spotify_tx.clone();
             let ctx = ctx.clone();
             let generation = self.membership_generation;
             let client = self.config.client_id.clone();
@@ -145,7 +145,7 @@ impl AurafyApp {
         let description = self.new_playlist_description.trim().to_string();
         let is_public = self.new_playlist_public;
         let client_id = self.config.client_id.clone();
-        let tx = self.tx.clone();
+        let tx = self.spotify_tx.clone();
         let ctx = ctx.clone();
         self.show_create_playlist = false;
         self.playlist_creation_in_progress = true;
@@ -276,12 +276,14 @@ impl AurafyApp {
             self.playlist_tracks
                 .retain(|track| !removed.contains(&track.uri));
             #[cfg(not(test))]
-            if let Some(playlist) = self.selected_playlist.clone() {
+            if let Some(playlist) = self.selected_playlist.clone()
+                && self.page == Page::Library
+            {
                 self.open_playlist(playlist, ctx);
             }
         }
         self.library_revision += 1;
-        self.last_library_poll = Instant::now() - Duration::from_secs(60);
+        self.last_library_poll = None;
         #[cfg(not(test))]
         self.load_library(ctx, true);
         #[cfg(test)]
@@ -294,18 +296,21 @@ impl AurafyApp {
             return;
         }
         if self.library_loading
-            || (!force && self.last_library_poll.elapsed() < Duration::from_secs(30))
+            || (!force
+                && self
+                    .last_library_poll
+                    .is_some_and(|last| last.elapsed() < Duration::from_secs(30)))
         {
             return;
         }
         self.library_loading = true;
         self.library_refresh_needed = false;
         self.library_error = None;
-        self.last_library_poll = Instant::now();
+        self.last_library_poll = Some(Instant::now());
         let revision = self.library_revision;
         let token = self.token.clone().unwrap();
         let client_id = self.config.client_id.clone();
-        let tx = self.tx.clone();
+        let tx = self.spotify_tx.clone();
         let ctx = ctx.clone();
         thread::spawn(move || {
             let result = spotify::refresh_if_needed(token, &client_id);
@@ -344,6 +349,8 @@ impl AurafyApp {
         self.selected_playlist = Some(playlist.clone());
         self.playlist_error = None;
         self.playlist_tracks.clear();
+        self.playlist_load_generation = self.playlist_load_generation.wrapping_add(1);
+        let generation = self.playlist_load_generation;
         if !playlist.items_accessible {
             self.playlist_loading = false;
             self.set_status("Spotify does not expose this playlist's items to this app");
@@ -351,7 +358,7 @@ impl AurafyApp {
         }
         self.playlist_loading = true;
         let playlist_id = playlist.id.clone();
-        let tx = self.tx.clone();
+        let tx = self.spotify_tx.clone();
         let ctx = ctx.clone();
         let client_id = self.config.client_id.clone();
         let token = self.token.clone().unwrap();
@@ -364,6 +371,7 @@ impl AurafyApp {
                 Err(error) => (None, Err(error)),
             };
             let _ = tx.send(AppEvent::PlaylistLoaded {
+                generation,
                 playlist_id,
                 tracks,
                 token,
@@ -380,12 +388,12 @@ impl AurafyApp {
             return;
         }
         self.player_poll_in_progress = true;
-        self.last_player_poll = Instant::now();
+        self.last_player_poll = Some(Instant::now());
         if include_queue {
-            self.last_queue_poll = Instant::now();
+            self.last_queue_poll = Some(Instant::now());
         }
         let client_id = self.config.client_id.clone();
-        let tx = self.tx.clone();
+        let tx = self.spotify_tx.clone();
         let ctx = ctx.clone();
         thread::spawn(move || {
             let refreshed = spotify::refresh_if_needed(token, &client_id);

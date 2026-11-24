@@ -245,6 +245,7 @@ impl AurafyApp {
                             changed |= ui.selectable_value(&mut self.config.audio.normalize, Some(false), "Off").changed();
                         });
                     });
+                    ui.label(RichText::new("Keep loud and quiet songs at a similar volume.").size(12.0).color(colours.muted));
                     ui.add_space(10.0);
                     changed |= preference(
                         ui,
@@ -252,7 +253,6 @@ impl AurafyApp {
                         "Ad blocker (auto-mute & skip ads)",
                         "Automatically mutes and skips detected ad breaks when controlling Spotify playback.",
                     );
-                    ui.label(RichText::new("Keep loud and quiet songs at a similar volume.").size(12.0).color(colours.muted));
                     ui.add_space(8.0);
                     ui.label(RichText::new("Quit and reopen Aurafy to apply audio changes.").size(11.5).color(colours.muted));
                     ui.add_space(12.0);
@@ -327,8 +327,8 @@ impl AurafyApp {
                                 candidate.clone()
                             };
                             self.persist_preferences();
-                            if self.local_player.is_some() {
-                                self.start_local_playback(ctx, false);
+                            if self.local_player.is_some() || self.local_starting {
+                                self.reconnect_local_player(ctx);
                                 self.set_status(format!("Restarting local player as {candidate}…"));
                             } else {
                                 self.set_status(format!("Device name set to {candidate}"));
@@ -338,8 +338,8 @@ impl AurafyApp {
                             self.device_name_draft = local_player::DEVICE_NAME.into();
                             self.config.connect_device_name.clear();
                             self.persist_preferences();
-                            if self.local_player.is_some() {
-                                self.start_local_playback(ctx, false);
+                            if self.local_player.is_some() || self.local_starting {
+                                self.reconnect_local_player(ctx);
                                 self.set_status("Restarting local player as Aurafy…");
                             } else {
                                 self.set_status("Device name reset to Aurafy");
@@ -389,19 +389,17 @@ impl AurafyApp {
                                 custom_accent: None,
                                 ..self.config.display
                             },
-                            None,
+                            ui.ctx().system_theme(),
                             None,
                         )
                         .green;
-                        let mut color = self
-                            .config
-                            .display
-                            .custom_accent
-                            .map(|[r, g, b]| Color32::from_rgb(r, g, b))
-                            .unwrap_or(base_green);
-                        if ui.color_edit_button_srgba(&mut color).changed() {
-                            self.config.display.custom_accent =
-                                Some([color.r(), color.g(), color.b()]);
+                        let mut color = self.config.display.custom_accent.unwrap_or([
+                            base_green.r(),
+                            base_green.g(),
+                            base_green.b(),
+                        ]);
+                        if ui.color_edit_button_srgb(&mut color).changed() {
+                            self.config.display.custom_accent = Some(color);
                             changed = true;
                         }
                         if self.config.display.custom_accent.is_some()

@@ -33,9 +33,9 @@ struct GitLabRelease {
     #[serde(default)]
     tag_name: String,
     #[serde(default)]
-    name: String,
+    name: Option<String>,
     #[serde(default)]
-    description: String,
+    description: Option<String>,
     #[serde(default)]
     released_at: Option<String>,
     #[serde(rename = "_links", default)]
@@ -48,19 +48,13 @@ struct GitLabLinks {
     self_url: String,
 }
 
-pub fn parse_semver(raw: &str) -> Option<(u64, u64, u64)> {
-    let trimmed = raw.trim().trim_start_matches(['v', 'V']);
-    let core = trimmed.split(['-', '+']).next().unwrap_or(trimmed);
-    let mut parts = core.split('.');
-    let major = parts.next()?.parse().ok()?;
-    let minor = parts.next().unwrap_or("0").parse().ok()?;
-    let patch = parts.next().unwrap_or("0").parse().ok()?;
-    Some((major, minor, patch))
+pub fn parse_semver(raw: &str) -> Option<semver::Version> {
+    semver::Version::parse(raw.trim().trim_start_matches(['v', 'V'])).ok()
 }
 
 pub fn is_newer(candidate_tag: &str, current_version: &str) -> bool {
     match (parse_semver(candidate_tag), parse_semver(current_version)) {
-        (Some(candidate), Some(current)) => candidate > current,
+        (Some(candidate), Some(current)) => candidate.cmp_precedence(&current).is_gt(),
         _ => false,
     }
 }
@@ -70,25 +64,39 @@ pub fn parse_gitlab_releases(body: &str, current_version: &str) -> Result<CheckO
         .map_err(|error| format!("Could not read GitLab releases response: {error}"))?;
     let Some(best) = releases
         .into_iter()
-        .max_by_key(|release| parse_semver(&release.tag_name).unwrap_or((0, 0, 0)))
+        .filter_map(|release| Some((parse_semver(&release.tag_name)?, release)))
+        .max_by(|(left, _), (right, _)| left.cmp_precedence(right))
+        .map(|(_, release)| release)
     else {
         return Ok(CheckOutcome::NoReleases);
     };
     let url = best
         .links
         .map(|links| links.self_url)
-        .filter(|url| !url.trim().is_empty())
+        .filter(|url| {
+            url::Url::parse(url).is_ok_and(|parsed| {
+                parsed.scheme() == "https"
+                    && parsed.host_str() == Some("gitlab.com")
+                    && parsed.username().is_empty()
+                    && parsed.password().is_none()
+            })
+        })
         .unwrap_or_else(|| RELEASES_URL.to_string());
-    let name = if best.name.trim().is_empty() {
+    let name = if best.name.as_deref().unwrap_or_default().trim().is_empty() {
         best.tag_name.clone()
     } else {
-        best.name.trim().to_string()
+        best.name.as_deref().unwrap_or_default().trim().to_string()
     };
     let info = ReleaseInfo {
         tag: best.tag_name.trim().to_string(),
         name,
         url,
-        notes: best.description.trim().to_string(),
+        notes: best
+            .description
+            .as_deref()
+            .unwrap_or_default()
+            .trim()
+            .to_string(),
         published_at: best.released_at,
     };
     if is_newer(&info.tag, current_version) {
@@ -134,8 +142,10 @@ mod tests {
 
     #[test]
     fn semver_comparison_handles_tags_and_updates() {
-        assert_eq!(parse_semver("v0.8.1"), Some((0, 8, 1)));
-        assert_eq!(parse_semver("0.9.0-rc.1"), Some((0, 9, 0)));
+        assert_eq!(parse_semver("v0.8.1").unwrap().to_string(), "0.8.1");
+        assert!(is_newer("0.9.0", "0.9.0-rc.1"));
+        assert!(is_newer("0.9.0-rc.10", "0.9.0-rc.2"));
+        assert!(!is_newer("0.9.0-rc.1", "0.9.0"));
         assert!(is_newer("v0.8.1", "0.8.0"));
         assert!(is_newer("v0.9.0", "0.8.0"));
         assert!(is_newer("1.0.0", "0.8.0"));

@@ -78,7 +78,7 @@ pub struct SongPage {
 struct ArtistRecord {
     id: String,
     name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "super::null_as_default")]
     images: Vec<ApiImage>,
 }
 
@@ -88,7 +88,7 @@ struct AlbumRecord {
     id: String,
     #[serde(default)]
     name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "super::null_as_default")]
     images: Vec<ApiImage>,
     #[serde(default)]
     artists: Vec<ApiArtist>,
@@ -160,7 +160,7 @@ pub fn artist_overview(token: &str, id: &str, name: &str) -> Result<ArtistOvervi
     } else {
         #[derive(Deserialize)]
         struct Artists {
-            items: Vec<ArtistRecord>,
+            items: Vec<Option<ArtistRecord>>,
         }
         #[derive(Deserialize)]
         struct Search {
@@ -180,6 +180,7 @@ pub fn artist_overview(token: &str, id: &str, name: &str) -> Result<ArtistOvervi
             .artists
             .items
             .into_iter()
+            .flatten()
             .find(|artist| artist.name.eq_ignore_ascii_case(name))
             .ok_or_else(|| {
                 "Couldn't identify this artist. Try opening a newer search result.".to_string()
@@ -278,11 +279,12 @@ fn artist_songs_from(
                     .tracks
                     .into_iter()
                     .flat_map(|page| page.items)
+                    .flatten()
                     .map(into_track)
                     .filter(|track| track.artist_ids.iter().any(|credit| credit == id))
                     .collect()
             }
-            Err(error) if error.contains("429") => return Err(error),
+            Err(error) if error == super::RATE_LIMIT_ERROR => return Err(error),
             Err(_) => {}
         }
     }
@@ -392,6 +394,9 @@ fn album_from(client: &Client, token: &str, base: &str, id: &str) -> Result<Albu
         let next_offset = tracks.offset + tracks.items.len();
         let has_next = tracks.next.is_some() && !tracks.items.is_empty();
         for (index, item) in tracks.items.into_iter().enumerate() {
+            let Some(item) = item else {
+                continue;
+            };
             let mut track = into_track(item);
             track.context_position = Some(tracks.offset + index);
             track.album = result.album.name.clone();

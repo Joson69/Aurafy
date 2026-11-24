@@ -138,12 +138,8 @@ pub(crate) struct AppConfig {
     pub(crate) connect_device_name: String,
     pub(crate) dj_model: String,
     pub(crate) language: i18n::Language,
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub(crate) ad_blocker: bool,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -341,6 +337,7 @@ pub(crate) enum AppEvent {
         token: Option<TokenState>,
     },
     PlaylistLoaded {
+        generation: u64,
         playlist_id: String,
         tracks: Result<Vec<Track>, String>,
         token: Option<TokenState>,
@@ -394,6 +391,8 @@ pub(crate) struct AurafyApp {
     pub(crate) logo_texture: egui::TextureHandle,
     pub(crate) tx: Sender<AppEvent>,
     pub(crate) rx: Receiver<AppEvent>,
+    pub(crate) spotify_tx: Sender<AppEvent>,
+    spotify_rx: Receiver<AppEvent>,
     pub(crate) token: Option<TokenState>,
 
     pub(crate) page: Page,
@@ -474,7 +473,7 @@ pub(crate) struct AurafyApp {
     pub(crate) device_popup_rect: Option<Rect>,
     pub(crate) device_button_rect: Option<Rect>,
     pub(crate) devices_error: Option<String>,
-    pub(crate) last_devices_poll: Instant,
+    pub(crate) next_devices_poll: Instant,
     pub(crate) local_player: Option<local_player::Player>,
     pub(crate) free_player: Option<free_player::FreePlayer>,
     pub(crate) local_player_generation: u64,
@@ -530,6 +529,7 @@ pub(crate) struct AurafyApp {
     pub(crate) library_refresh_needed: bool,
     pub(crate) library_error: Option<String>,
     pub(crate) playlist_loading: bool,
+    pub(crate) playlist_load_generation: u64,
 
     pub(crate) artwork_cache: artwork::Cache,
     pub(crate) artwork_pending: HashSet<String>,
@@ -542,9 +542,9 @@ pub(crate) struct AurafyApp {
     pub(crate) auth_uses_fallback_port: bool,
     pub(crate) auth_cancel: Option<Arc<AtomicBool>>,
     pub(crate) player_poll_in_progress: bool,
-    pub(crate) last_player_poll: Instant,
-    pub(crate) last_queue_poll: Instant,
-    pub(crate) last_library_poll: Instant,
+    pub(crate) last_player_poll: Option<Instant>,
+    pub(crate) last_queue_poll: Option<Instant>,
+    pub(crate) last_library_poll: Option<Instant>,
     pub(crate) status_message: String,
     pub(crate) status_until: Instant,
     pub(crate) last_session_save: Instant,
@@ -620,7 +620,9 @@ impl AurafyApp {
             self.select_local_on_ready = false;
             if self.is_playing {
                 // A timer must never activate this computer just to pause it.
-                if self.local_status.active && self.local_player.is_some() {
+                if self.use_free_player() {
+                    self.send_playback_action("pause", ctx);
+                } else if self.local_status.active && self.local_player.is_some() {
                     self.local_command("pause", vec![local_player::request("pause")]);
                 } else if self.is_connected() {
                     self.start_spotify_action(
@@ -668,7 +670,7 @@ impl AurafyApp {
             if let Some(refresh_token) = spotify::load_refresh_token() {
                 app.auth_in_progress = true;
                 app.auth_cancel = Some(Arc::new(AtomicBool::new(false)));
-                let tx = app.tx.clone();
+                let tx = app.spotify_tx.clone();
                 let client_id = app.config.client_id.clone();
                 let ctx = cc.egui_ctx.clone();
                 thread::spawn(move || {
@@ -678,6 +680,11 @@ impl AurafyApp {
                 });
                 app.set_status("Restoring your Spotify session…");
             }
+        }
+        if !app.auth_in_progress {
+            app.search_loading = false;
+            app.artist_loading = false;
+            app.browse.album_loading = false;
         }
         if app.config.local_playback {
             app.enable_local_playback(&cc.egui_ctx);
@@ -708,6 +715,7 @@ impl AurafyApp {
         ctx.set_zoom_factor(config.display.zoom());
 
         let (tx, rx) = mpsc::channel();
+        let (spotify_tx, spotify_rx) = mpsc::channel();
         let demo_tracks = demo_tracks();
         let configured = !config.client_id.trim().is_empty() || config.local_playback;
         let current_track = if configured {
@@ -777,6 +785,8 @@ impl AurafyApp {
             logo_texture: desktop::logo_texture(ctx),
             tx,
             rx,
+            spotify_tx,
+            spotify_rx,
             token: None,
             page,
             search_query: search_query.clone(),
@@ -866,7 +876,7 @@ impl AurafyApp {
             device_popup_rect: None,
             device_button_rect: None,
             devices_error: None,
-            last_devices_poll: now - Duration::from_secs(10),
+            next_devices_poll: now + Duration::from_secs(20),
             local_player: None,
             free_player: None,
             local_player_generation: 0,
@@ -921,6 +931,7 @@ impl AurafyApp {
             library_refresh_needed: false,
             library_error: None,
             playlist_loading: false,
+            playlist_load_generation: 0,
             artwork_cache: artwork::Cache::default(),
             artwork_pending: HashSet::new(),
             artwork_failed: HashSet::new(),
@@ -931,9 +942,9 @@ impl AurafyApp {
             auth_uses_fallback_port: false,
             auth_cancel: None,
             player_poll_in_progress: false,
-            last_player_poll: now - Duration::from_secs(10),
-            last_queue_poll: now - Duration::from_secs(30),
-            last_library_poll: now - Duration::from_secs(60),
+            last_player_poll: None,
+            last_queue_poll: None,
+            last_library_poll: None,
             status_message: if configured {
                 "Restoring your music…".into()
             } else {
@@ -1201,6 +1212,12 @@ impl AurafyApp {
     }
 
     pub(crate) fn accept_token(&mut self, token: TokenState) {
+        if self.token.as_ref().is_some_and(|current| {
+            Arc::ptr_eq(&current.refresh_cache, &token.refresh_cache)
+                && token.revision < current.revision
+        }) {
+            return;
+        }
         // Spotify may rotate the refresh token. Keep the newest one in the OS keychain.
         let old_refresh = self
             .token

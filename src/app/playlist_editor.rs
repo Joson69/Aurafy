@@ -136,7 +136,7 @@ impl AurafyApp {
             && self
                 .token
                 .as_ref()
-                .is_some_and(|current| token.expires_at > current.expires_at)
+                .is_some_and(|current| token.revision > current.revision)
         {
             self.accept_token(token);
         }

@@ -137,6 +137,8 @@ fn fixture(ctx: &egui::Context) -> AurafyApp {
         access_token: "preview-only".into(),
         refresh_token: None,
         expires_at: Instant::now() + Duration::from_secs(3600),
+        revision: 0,
+        refresh_cache: Default::default(),
     });
     app.user_name = Some("grid".into());
     app.user_profile = Some(spotify::UserProfile {
@@ -527,6 +529,8 @@ fn play_here_uses_the_restored_native_player_without_web_device_discovery() {
         access_token: "test-only".into(),
         refresh_token: None,
         expires_at: Instant::now() + Duration::from_secs(300),
+        revision: 0,
+        refresh_cache: Default::default(),
     });
     app.current_track = real_track("phone");
     app.device_name = Some("Phone".into());
@@ -579,8 +583,10 @@ fn device_list_keeps_the_ready_local_receiver_and_background_refresh_is_quiet() 
         access_token: "test-only".into(),
         refresh_token: None,
         expires_at: Instant::now() + Duration::from_secs(300),
+        revision: 0,
+        refresh_cache: Default::default(),
     });
-    app.last_devices_poll = Instant::now() - Duration::from_secs(31);
+    app.next_devices_poll = Instant::now();
     assert!(
         !app.should_refresh_devices(),
         "settings must not poll devices"
@@ -781,7 +787,7 @@ fn main_play_uses_selected_auralis_after_a_paused_start_releases_activity() {
         .unwrap();
     app.handle_events(&ctx);
     assert!(!app.follow_remote_device);
-    assert_eq!(app.selected_output_name(), Some("Aurafy"));
+    assert_eq!(app.selected_output_name().as_deref(), Some("Aurafy"));
     assert!(
         app.playback_devices()[0].is_active,
         "the paused local output stays selected"
@@ -2781,6 +2787,7 @@ fn switching_playlists_keeps_the_selected_playlist_loading() {
     app.playlist_loading = true;
     app.tx
         .send(AppEvent::PlaylistLoaded {
+            generation: app.playlist_load_generation,
             playlist_id: "first".into(),
             tracks: Err("old error".into()),
             token: None,
@@ -2791,6 +2798,7 @@ fn switching_playlists_keeps_the_selected_playlist_loading() {
     assert!(app.playlist_error.is_none());
     app.tx
         .send(AppEvent::PlaylistLoaded {
+            generation: app.playlist_load_generation,
             playlist_id: "second".into(),
             tracks: Err("current error".into()),
             token: None,
@@ -3380,6 +3388,8 @@ fn top_music_ignores_signed_out_response() {
                 access_token: "stale".into(),
                 refresh_token: None,
                 expires_at: Instant::now() + Duration::from_secs(600),
+                revision: 0,
+                refresh_cache: Default::default(),
             }),
         })
         .unwrap();
@@ -3529,7 +3539,7 @@ fn custom_connect_device_name_sanitizes_and_drives_local_output() {
     app.config.connect_device_name = "Studio PC".into();
     app.local_status.paired = true;
     app.local_status.active = true;
-    assert_eq!(app.selected_output_name(), Some("Studio PC"));
+    assert_eq!(app.selected_output_name().as_deref(), Some("Studio PC"));
     let devices = app.playback_devices();
     assert_eq!(devices[0].id, "auralis-local");
     assert_eq!(devices[0].name, "Studio PC");
@@ -3788,6 +3798,8 @@ fn track_table_sorting_preserves_context_position_on_playback() {
         access_token: "test-only".into(),
         refresh_token: None,
         expires_at: Instant::now() + Duration::from_secs(300),
+        revision: 0,
+        refresh_cache: Default::default(),
     });
     app.local_status.active = true;
     app.page = Page::Library;
@@ -4174,6 +4186,8 @@ fn search_play_keeps_manual_entries_and_restores_spotify_queue() {
         access_token: "test-only".into(),
         refresh_token: None,
         expires_at: Instant::now() + Duration::from_secs(300),
+        revision: 0,
+        refresh_cache: Default::default(),
     });
     let playlist = Playlist {
         id: "pl_q".into(),
@@ -4272,6 +4286,8 @@ fn autoplay_continues_after_queue_empties_unless_cleared() {
         access_token: "test-token".into(),
         refresh_token: None,
         expires_at: Instant::now() + Duration::from_secs(3600),
+        revision: 0,
+        refresh_cache: Default::default(),
     });
 
     let mut first = real_track(&format!("{:0>22}", 910));
@@ -4335,4 +4351,30 @@ fn collect_shape_text(shape: &egui::Shape, target: &str, out: &mut Vec<Rect>) {
         }
         _ => {}
     }
+}
+
+#[test]
+fn replacing_spotify_session_drops_old_replies_and_clears_requests() {
+    let ctx = egui::Context::default();
+    let mut app = fixture(&ctx);
+    let old_session = app.spotify_tx.clone();
+    app.library_loading = true;
+    app.player_poll_in_progress = true;
+    app.playlist_creation_in_progress = true;
+    app.search_loading = true;
+    let reply = || AppEvent::SearchCatalogFinished {
+        query: "old search".into(),
+        result: Ok(Default::default()),
+        token: app.token.clone(),
+    };
+    old_session.send(reply()).unwrap();
+    let late_reply = reply();
+    app.reset_spotify_requests();
+    assert!(old_session.send(late_reply).is_err());
+    app.handle_events(&ctx);
+    assert!(app.search_catalog.is_none());
+    assert!(!app.library_loading);
+    assert!(!app.player_poll_in_progress);
+    assert!(!app.playlist_creation_in_progress);
+    assert!(!app.search_loading);
 }

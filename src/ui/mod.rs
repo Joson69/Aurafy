@@ -477,6 +477,8 @@ pub(crate) fn icon_button(ui: &mut Ui, kind: Icon, label: &str, active: bool) ->
         kind,
         if active {
             colours.green
+        } else if response.hovered() && matches!(kind, Icon::Close) {
+            Color32::WHITE
         } else if response.hovered() {
             colours.text
         } else {
@@ -567,11 +569,9 @@ fn playlist_play_at(
         rect.center(),
         rect.width() * 0.5,
         if response.hovered() {
-            if colours.dark {
-                Color32::from_rgb(147, 240, 199)
-            } else {
-                Color32::from_rgb(0, 92, 60)
-            }
+            colours
+                .green
+                .gamma_multiply(if colours.dark { 1.12 } else { 0.86 })
         } else {
             colours.green
         },
@@ -948,8 +948,12 @@ fn player_slider(ui: &mut Ui, value: &mut f32, width: f32, label: &str) -> egui:
         response.request_focus();
     }
     if response.has_focus() {
+        ui.ctx()
+            .data_mut(|data| data.insert_temp(Id::new("player-slider-focus"), response.id));
         let delta = ui.input(|i| {
-            if i.key_pressed(Key::ArrowRight) {
+            if i.modifiers.any() {
+                0.0
+            } else if i.key_pressed(Key::ArrowRight) {
                 0.01
             } else if i.key_pressed(Key::ArrowLeft) {
                 -0.01

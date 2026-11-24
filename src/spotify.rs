@@ -21,6 +21,7 @@ pub mod playback;
 pub const REDIRECT_URI: &str = "http://127.0.0.1:8888/callback";
 pub const FALLBACK_REDIRECT_URI: &str = "http://127.0.0.1:43821/callback";
 const API_BASE: &str = "https://api.spotify.com/v1";
+const RATE_LIMIT_ERROR: &str = "Spotify rate limit reached. Wait a moment and try again.";
 const TOKEN_URL: &str = "https://accounts.spotify.com/api/token";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(18);
 
@@ -29,6 +30,16 @@ pub struct TokenState {
     pub access_token: String,
     pub refresh_token: Option<String>,
     pub expires_at: Instant,
+    pub(crate) revision: u64,
+    pub(crate) refresh_cache: std::sync::Arc<std::sync::Mutex<Option<TokenSnapshot>>>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct TokenSnapshot {
+    access_token: String,
+    refresh_token: Option<String>,
+    expires_at: Instant,
+    revision: u64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -105,6 +116,14 @@ struct TokenResponse {
     refresh_token: Option<String>,
 }
 
+fn null_as_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 #[derive(Deserialize)]
 struct SearchResponse {
     tracks: Option<TrackPage>,
@@ -113,7 +132,7 @@ struct SearchResponse {
 #[derive(Deserialize)]
 struct TrackPage {
     #[serde(default)]
-    items: Vec<ApiTrack>,
+    items: Vec<Option<ApiTrack>>,
     #[serde(default)]
     next: Option<String>,
     #[serde(default)]
@@ -159,7 +178,7 @@ struct ApiAlbum {
     id: String,
     #[serde(default)]
     name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     images: Vec<ApiImage>,
 }
 
@@ -226,7 +245,7 @@ struct SavedTrackItem {
 #[derive(Deserialize)]
 struct PlaylistPage {
     #[serde(default)]
-    items: Vec<ApiPlaylist>,
+    items: Vec<Option<ApiPlaylist>>,
     next: Option<String>,
 }
 
@@ -238,7 +257,7 @@ struct ApiPlaylist {
     name: String,
     #[serde(default, deserialize_with = "nullable_string")]
     description: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     images: Vec<ApiImage>,
     owner: Option<ApiOwner>,
     items: Option<ApiPlaylistItems>,
@@ -286,7 +305,7 @@ struct ApiProfile {
     id: String,
     #[serde(default)]
     display_name: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     images: Vec<ApiImage>,
     external_urls: Option<ApiExternalUrls>,
 }
@@ -370,7 +389,7 @@ fn checked_response(response: Response, context: &str) -> Result<Response, Strin
         401 => "Spotify authorization expired. Reconnect Spotify.".to_string(),
         403 => "Spotify denied this action. Check Premium, app access, and requested permissions."
             .to_string(),
-        429 => "Spotify rate limit reached. Wait a moment and try again.".to_string(),
+        429 => RATE_LIMIT_ERROR.to_owned(),
         404 => PLAYBACK_NOT_FOUND.to_owned(),
         _ if message.is_empty() => format!("HTTP {status}"),
         _ => format!("HTTP {status}: {message}"),
@@ -498,6 +517,8 @@ fn exchange_code(
         access_token: token.access_token,
         refresh_token: token.refresh_token,
         expires_at: Instant::now() + Duration::from_secs(token.expires_in),
+        revision: 0,
+        refresh_cache: Default::default(),
     })
 }
 
@@ -665,6 +686,20 @@ fn wait_for_callback(
 }
 
 pub fn refresh_if_needed(mut token: TokenState, client_id: &str) -> Result<TokenState, String> {
+    // Every job for this login shares the same refresh result, including rotations.
+    let cache = token.refresh_cache.clone();
+    let mut latest = cache
+        .lock()
+        .map_err(|_| "Spotify refresh state is unavailable")?;
+    if let Some(snapshot) = latest
+        .as_ref()
+        .filter(|snapshot| snapshot.revision > token.revision)
+    {
+        token.access_token.clone_from(&snapshot.access_token);
+        token.refresh_token.clone_from(&snapshot.refresh_token);
+        token.expires_at = snapshot.expires_at;
+        token.revision = snapshot.revision;
+    }
     if Instant::now() + Duration::from_secs(45) < token.expires_at {
         return Ok(token);
     }
@@ -689,6 +724,13 @@ pub fn refresh_if_needed(mut token: TokenState, client_id: &str) -> Result<Token
         token.refresh_token = refreshed.refresh_token;
     }
     token.expires_at = Instant::now() + Duration::from_secs(refreshed.expires_in);
+    token.revision += 1;
+    *latest = Some(TokenSnapshot {
+        access_token: token.access_token.clone(),
+        refresh_token: token.refresh_token.clone(),
+        expires_at: token.expires_at,
+        revision: token.revision,
+    });
     Ok(token)
 }
 
@@ -697,6 +739,8 @@ pub fn restore_session(refresh_token: &str, client_id: &str) -> Result<TokenStat
         access_token: String::new(),
         refresh_token: Some(refresh_token.to_owned()),
         expires_at: Instant::now(),
+        revision: 0,
+        refresh_cache: Default::default(),
     };
     refresh_if_needed(token, client_id)
 }
@@ -725,7 +769,7 @@ pub fn search_tracks(access_token: &str, query: &str) -> Result<Vec<Track>, Stri
             .map_err(|e| format!("Could not read Spotify search results: {e}"))?;
         let items = data.tracks.map(|page| page.items).unwrap_or_default();
         let page_len = items.len();
-        results.extend(items.into_iter().map(into_track));
+        results.extend(items.into_iter().flatten().map(into_track));
         if page_len < 10 {
             break;
         }
@@ -866,7 +910,7 @@ fn get_playlists_from(
             .json()
             .map_err(|e| format!("Could not parse your playlists: {e}"))?;
         let count = page.items.len();
-        playlists.extend(page.items.into_iter().map(into_playlist));
+        playlists.extend(page.items.into_iter().flatten().map(into_playlist));
         if count == 0 || page.next.is_none() {
             break;
         }
@@ -1019,6 +1063,7 @@ pub fn get_playlist_uris(
     access_token: &str,
     playlist_id: &str,
 ) -> Result<std::collections::HashSet<String>, String> {
+    validate_playlist_id(playlist_id)?;
     let client = http_client()?;
     let mut uris = std::collections::HashSet::new();
     for page in 0..2000 {
@@ -1051,10 +1096,32 @@ pub fn get_playlist_uris(
     Err("Playlist membership exceeded the supported limit".into())
 }
 
+pub(crate) const PLAYLIST_PREVIEW_LIMIT: usize = 150;
+
+pub fn get_playlist_playback_items(
+    access_token: &str,
+    playlist_id: &str,
+) -> Result<Vec<Track>, String> {
+    let client = http_client()?;
+    let mut tracks = Vec::new();
+    let mut offset = 0;
+    for _ in 0..2000 {
+        let data = playlist_items_page(&client, access_token, playlist_id, offset)?;
+        let page_len = data.items.len();
+        let has_next = data.next.is_some();
+        tracks.extend(playlist_page_tracks(data, offset));
+        if !has_next || page_len == 0 {
+            return Ok(tracks);
+        }
+        offset += page_len;
+    }
+    Err("Playlist exceeded the supported playback limit".into())
+}
+
 pub fn get_playlist_items(access_token: &str, playlist_id: &str) -> Result<Vec<Track>, String> {
     let client = http_client()?;
     let mut tracks = Vec::new();
-    for offset in [0, 50, 100] {
+    for offset in (0..PLAYLIST_PREVIEW_LIMIT).step_by(50) {
         let data = playlist_items_page(&client, access_token, playlist_id, offset)?;
         let page_len = data.items.len();
         tracks.extend(playlist_page_tracks(data, offset));
@@ -1065,12 +1132,20 @@ pub fn get_playlist_items(access_token: &str, playlist_id: &str) -> Result<Vec<T
     Ok(tracks)
 }
 
+fn validate_playlist_id(id: &str) -> Result<(), String> {
+    if id.is_empty() || !id.bytes().all(|byte| byte.is_ascii_alphanumeric()) {
+        return Err("Invalid Spotify playlist ID".into());
+    }
+    Ok(())
+}
+
 fn playlist_items_page(
     client: &Client,
     access: &str,
     id: &str,
     offset: usize,
 ) -> Result<PlaylistItemsPage, String> {
+    validate_playlist_id(id)?;
     api_response(
         client
             .get(format!("{API_BASE}/playlists/{id}/items"))

@@ -23,7 +23,7 @@ impl AurafyApp {
         let cancelled = Arc::new(AtomicBool::new(false));
         self.auth_cancel = Some(cancelled.clone());
         self.set_status("Opening Spotify sign-in in your browser…");
-        let tx = self.tx.clone();
+        let tx = self.spotify_tx.clone();
         let client_id = self.config.client_id.clone();
         let ctx = ctx.clone();
         thread::spawn(move || {
@@ -41,7 +41,32 @@ impl AurafyApp {
         });
     }
 
+    pub(crate) fn reset_spotify_requests(&mut self) {
+        (self.spotify_tx, self.spotify_rx) = mpsc::channel();
+        self.library_loading = false;
+        self.player_poll_in_progress = false;
+        self.playlist_creation_in_progress = false;
+        self.playlist_loading = false;
+        self.search_loading = false;
+        self.artist_loading = false;
+        self.browse.album_loading = false;
+        self.devices_loading = false;
+        self.recent_loading = false;
+        self.last_home_load = None;
+    }
+
     pub(crate) fn disconnect_spotify(&mut self) {
+        if let Some(cancelled) = self.auth_cancel.take() {
+            cancelled.store(true, Ordering::Relaxed);
+        }
+        self.auth_in_progress = false;
+        self.auth_url = None;
+        self.reset_spotify_requests();
+        self.search_results.clear();
+        self.search_catalog = None;
+        self.search_error = None;
+        self.show_create_playlist = false;
+        self.stop_free_player();
         self.stop_local_playback();
         self.insights.reset();
         self.membership_generation = self.membership_generation.wrapping_add(1);
@@ -154,7 +179,7 @@ impl AurafyApp {
         }
 
         if let Some(token) = self.token.clone() {
-            let tx = self.tx.clone();
+            let tx = self.spotify_tx.clone();
             let client_id = self.config.client_id.clone();
             let ctx = ctx.clone();
             thread::spawn(move || {
@@ -321,6 +346,7 @@ impl AurafyApp {
                 && let Some(fp) = &self.free_player
             {
                 fp.send(free_player::FreeCommand::SetVolume(f64::from(self.volume)));
+                self.volume_control.complete(true);
                 return;
             }
         }
@@ -351,6 +377,9 @@ impl AurafyApp {
             }
         }
         let Some(token) = self.token.clone() else {
+            if action == "volume" {
+                self.volume_control.complete(false);
+            }
             self.set_status("Connect Spotify to use this control with a real device");
             return;
         };
@@ -361,7 +390,7 @@ impl AurafyApp {
         }
         #[cfg(not(test))]
         {
-            let tx = self.tx.clone();
+            let tx = self.spotify_tx.clone();
             let client_id = self.config.client_id.clone();
             let ctx = ctx.clone();
             thread::spawn(move || {
@@ -418,10 +447,10 @@ impl AurafyApp {
             return false;
         }
         if !self.playlist_tracks.is_empty()
-            && self
-                .selected_playlist
-                .as_ref()
-                .is_some_and(|selected| selected.id == playlist_id)
+            && self.selected_playlist.as_ref().is_some_and(|selected| {
+                selected.id == playlist_id
+                    && selected.total_items <= spotify::PLAYLIST_PREVIEW_LIMIT
+            })
         {
             if !self.current_track.uri.is_empty()
                 && !self
@@ -469,7 +498,7 @@ impl AurafyApp {
             })
             .unwrap_or_else(|| start_position.min(valid.len().saturating_sub(1)));
         let first = valid[start_idx].clone();
-        let remaining: Vec<Track> = valid.into_iter().skip(start_idx + 1).take(1000).collect();
+        let remaining: Vec<Track> = valid.into_iter().skip(start_idx + 1).collect();
         self.suppress_upstream_queue = true;
         self.queue_cleared_by_user = false;
         self.autoplay_pending = false;
@@ -492,11 +521,12 @@ impl AurafyApp {
     }
 
     fn collection_tracks_for(&self, uri: &str) -> Option<Vec<Track>> {
-        if self
-            .selected_playlist
-            .as_ref()
-            .is_some_and(|p| format!("spotify:playlist:{}", p.id) == uri)
-            && !self.playlist_tracks.is_empty()
+        if self.selected_playlist.as_ref().is_some_and(|p| {
+            format!("spotify:playlist:{}", p.id) == uri
+                && p.total_items <= spotify::PLAYLIST_PREVIEW_LIMIT
+                && (p.total_items != 0
+                    || self.playlist_tracks.len() < spotify::PLAYLIST_PREVIEW_LIMIT)
+        }) && !self.playlist_tracks.is_empty()
         {
             let tracks: Vec<Track> = self
                 .playlist_tracks
@@ -571,7 +601,7 @@ impl AurafyApp {
                 && (start.uri.starts_with("spotify:playlist:")
                     || start.uri.starts_with("spotify:album:"))
             {
-                let tx = self.tx.clone();
+                let tx = self.spotify_tx.clone();
                 let ctx_clone = ctx.clone();
                 let client_id = self.config.client_id.clone();
                 self.set_status("Loading collection tracks…");
@@ -580,7 +610,7 @@ impl AurafyApp {
                         Ok(token) => {
                             let res = if let Some(id) = start.uri.strip_prefix("spotify:playlist:")
                             {
-                                spotify::get_playlist_items(&token.access_token, id)
+                                spotify::get_playlist_playback_items(&token.access_token, id)
                             } else if let Some(id) = start.uri.strip_prefix("spotify:album:") {
                                 spotify::catalog::album_details(&token.access_token, id)
                                     .map(|details| details.tracks)
@@ -984,7 +1014,7 @@ impl AurafyApp {
         #[cfg(not(test))]
         {
             let client_id = self.config.client_id.clone();
-            let tx = self.tx.clone();
+            let tx = self.spotify_tx.clone();
             let ctx = ctx.clone();
             thread::spawn(move || {
                 let (token, result) = match spotify::refresh_if_needed(token, &client_id) {
@@ -1134,7 +1164,7 @@ impl AurafyApp {
         let has_existing = !self.queue.is_empty()
             || !self.priority_queue.is_empty()
             || self.suppress_upstream_queue;
-        if has_existing
+        if (has_existing || self.use_free_player())
             && !track.uri.is_empty()
             && (self.use_local_playback() || self.is_connected() || self.is_demo_mode())
         {
@@ -1170,7 +1200,8 @@ impl AurafyApp {
         let has_existing = !self.queue.is_empty()
             || !self.priority_queue.is_empty()
             || self.suppress_upstream_queue;
-        if has_existing && (self.use_local_playback() || self.is_connected() || self.is_demo_mode())
+        if (has_existing || self.use_free_player())
+            && (self.use_local_playback() || self.is_connected() || self.is_demo_mode())
         {
             let before = self.priority_queue.len();
             self.queue_priority_tracks(&valid);
@@ -1233,8 +1264,19 @@ impl AurafyApp {
             });
             return;
         }
+        if self.can_start_free_player() {
+            self.start_local_collection_queue(
+                String::new(),
+                std::iter::once(first).chain(shuffled).collect(),
+                0,
+                None,
+                ctx,
+            );
+            return;
+        }
         self.suppress_upstream_queue = false;
         self.priority_queue.clear();
+        self.manual_queue_len = 0;
         self.priority_dispatched = None;
         let remaining: Vec<Track> = shuffled.into_iter().take(24).collect();
         if self.use_local_for_play() && !first.uri.is_empty() {

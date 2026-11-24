@@ -531,7 +531,7 @@ impl AurafyApp {
                             )),
                     );
                     focused = response.has_focus();
-                    if response.gained_focus() {
+                    if response.gained_focus() && self.page != Page::Search {
                         self.search_popup_open = true;
                     }
                     if response.changed() {

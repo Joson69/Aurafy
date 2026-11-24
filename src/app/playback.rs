@@ -10,9 +10,9 @@ impl AurafyApp {
             return;
         }
         self.devices_loading = true;
-        self.last_devices_poll = Instant::now();
+        self.next_devices_poll = Instant::now() + Duration::from_secs(30);
         let client_id = self.config.client_id.clone();
-        let tx = self.tx.clone();
+        let tx = self.spotify_tx.clone();
         let ctx = ctx.clone();
         thread::spawn(move || {
             let (token, devices) = match spotify::refresh_if_needed(token, &client_id) {
@@ -29,15 +29,6 @@ impl AurafyApp {
 
     pub(crate) fn local_device_name(&self) -> String {
         self.config.effective_device_name()
-    }
-
-    pub(crate) fn local_device_name_ref(&self) -> &str {
-        let trimmed = self.config.connect_device_name.trim();
-        if trimmed.is_empty() {
-            local_player::DEVICE_NAME
-        } else {
-            trimmed
-        }
     }
 
     pub(crate) fn playback_devices(&self) -> Vec<Device> {
@@ -69,7 +60,7 @@ impl AurafyApp {
             && self.is_connected()
             && !self.local_status.active
             && !self.devices_loading
-            && self.last_devices_poll.elapsed() >= Duration::from_secs(30)
+            && Instant::now() >= self.next_devices_poll
     }
 
     pub(crate) fn load_insights(&mut self, ctx: &egui::Context) {
@@ -90,7 +81,7 @@ impl AurafyApp {
         let range = self.insights.range;
         #[cfg(not(test))]
         {
-            let tx = self.tx.clone();
+            let tx = self.spotify_tx.clone();
             let ctx = ctx.clone();
             let client_id = self.config.client_id.clone();
             thread::spawn(move || {
@@ -129,7 +120,7 @@ impl AurafyApp {
         self.recent_error = None;
         self.last_home_load = Some(Instant::now());
         let client_id = self.config.client_id.clone();
-        let tx = self.tx.clone();
+        let tx = self.spotify_tx.clone();
         let ctx = ctx.clone();
         thread::spawn(move || {
             let (token, recent_tracks, profile) =
@@ -153,7 +144,7 @@ impl AurafyApp {
     pub(crate) fn transfer_to_device(&mut self, device: Device, ctx: &egui::Context) {
         self.volume_control = volume::Control::default();
         self.resume_on_local_ready = false;
-        if device.name == self.local_device_name_ref() && self.local_status.paired {
+        if device.name == self.local_device_name() && self.local_status.paired {
             self.listen_here(ctx);
             return;
         }
@@ -196,7 +187,12 @@ impl AurafyApp {
             self.local_key_input.clear();
             key
         };
+        self.stop_free_player();
         self.local_player_generation = self.local_player_generation.wrapping_add(1);
+        self.volume_control = volume::Control::default();
+        if self.local_status.active {
+            self.is_playing = false;
+        }
         self.local_player.take();
         self.select_local_on_ready = true;
         self.local_starting = true;
@@ -256,6 +252,10 @@ impl AurafyApp {
     }
 
     pub(crate) fn stop_local_playback(&mut self) {
+        if let Some(previous) = self.pre_ad_volume.take() {
+            self.volume = f32::from(previous) / 100.0;
+        }
+        self.last_ad_skip = None;
         self.volume_control = volume::Control::default();
         self.select_local_on_ready = false;
         self.resume_on_local_ready = false;
@@ -274,6 +274,10 @@ impl AurafyApp {
 
     pub(crate) fn restart_local_pairing(&mut self, ctx: &egui::Context) {
         self.local_player_generation = self.local_player_generation.wrapping_add(1);
+        self.volume_control = volume::Control::default();
+        if self.local_status.active {
+            self.is_playing = false;
+        }
         self.local_player.take();
         self.local_starting = false;
         self.local_status = local_player::Status::default();
@@ -282,6 +286,10 @@ impl AurafyApp {
 
     pub(crate) fn reconnect_local_player(&mut self, ctx: &egui::Context) {
         self.local_player_generation = self.local_player_generation.wrapping_add(1);
+        self.volume_control = volume::Control::default();
+        if self.local_status.active {
+            self.is_playing = false;
+        }
         self.local_player.take();
         self.local_starting = false;
         self.local_status = local_player::Status::default();
@@ -298,11 +306,11 @@ impl AurafyApp {
         self.use_local_playback()
     }
 
-    pub(crate) fn selected_output_name(&self) -> Option<&str> {
+    pub(crate) fn selected_output_name(&self) -> Option<String> {
         if self.use_local_playback() {
-            Some(self.local_device_name_ref())
+            Some(self.local_device_name())
         } else {
-            self.device_name.as_deref()
+            self.device_name.clone()
         }
     }
 
@@ -395,8 +403,8 @@ impl AurafyApp {
                     self.device_name = None;
                     self.device_id = None;
                     self.pending_handoff = None;
-                    self.last_player_poll = Instant::now() - Duration::from_secs(10);
-                    self.last_devices_poll = Instant::now() - Duration::from_secs(10);
+                    self.last_player_poll = None;
+                    self.next_devices_poll = Instant::now() + Duration::from_secs(20);
                 }
                 if !status.running && !status.connecting {
                     self.resume_on_local_ready = false;
@@ -513,15 +521,23 @@ impl AurafyApp {
                     }
                 }
                 if self.local_status.active {
-                    if state.is_playing
-                        && state
-                            .track
-                            .as_ref()
-                            .is_some_and(|track| track.duration_ms > 0)
+                    let handoff_resolved = self.pending_handoff.as_ref().is_some_and(|pending| {
+                        pending.captured.elapsed() > Duration::from_secs(10)
+                            || (state.is_playing
+                                && state.track.as_ref().is_some_and(|track| {
+                                    track.duration_ms > 0 && track.uri == pending.bookmark.track.uri
+                                }))
+                    });
+                    if handoff_resolved
                         && let Some(pending) = self.pending_handoff.take()
                         && let Some(position) = pending.correction(&state)
                     {
-                        self.local_command("restore_position",vec![serde_json::json!({"type":"command","command":"seek","position_ms":position})]);
+                        self.local_command(
+                            "restore_position",
+                            vec![serde_json::json!({
+                                "type": "command", "command": "seek", "position_ms": position
+                            })],
+                        );
                     }
                     if state
                         .track
@@ -655,7 +671,7 @@ impl AurafyApp {
         if self.config.ad_blocker && is_ad {
             if self.pre_ad_volume.is_none() {
                 let current_vol = (self.volume * 100.0).round().clamp(0.0, 100.0) as u8;
-                self.pre_ad_volume = Some(current_vol.max(1));
+                self.pre_ad_volume = Some(current_vol);
                 self.volume = 0.0;
                 self.queue_volume(true, ctx);
             }
@@ -665,7 +681,15 @@ impl AurafyApp {
             {
                 self.last_ad_skip = Some(Instant::now());
                 self.set_status("Ad detected · Muting and skipping…");
-                self.send_playback_action("next", ctx);
+                if self.use_local_playback() {
+                    self.local_command("ad_skip", vec![local_player::request("next")]);
+                } else {
+                    self.start_spotify_action(
+                        "ad_skip".into(),
+                        |access| spotify::playback_command(access, "next"),
+                        ctx,
+                    );
+                }
             }
         } else if !is_ad && let Some(prev_vol) = self.pre_ad_volume.take() {
             self.last_ad_skip = None;
@@ -704,7 +728,17 @@ impl AurafyApp {
         player
     }
 
+    pub(crate) fn stop_free_player(&mut self) {
+        if let Some(player) = self.free_player.take() {
+            player.send(free_player::FreeCommand::Stop);
+        }
+    }
+
     pub(crate) fn poll_free_player(&mut self, ctx: &egui::Context) {
+        if !self.use_free_player() {
+            self.stop_free_player();
+            return;
+        }
         let Some(fp) = self.free_player.as_mut() else {
             return;
         };
@@ -744,7 +778,9 @@ impl AurafyApp {
                 }
             }
         }
-        if let Some(ended_uri) = ended {
+        if let Some(ended_uri) = ended
+            && ended_uri == self.current_track.uri
+        {
             if self.repeat_state == "track" && !self.current_track.uri.is_empty() {
                 self.dispatch_track_play(self.current_track.clone(), ctx);
             } else if !self.priority_queue.is_empty() {

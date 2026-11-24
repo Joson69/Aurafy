@@ -1054,7 +1054,7 @@ impl AurafyApp {
                             6.0,
                             Color32::from_rgba_unmultiplied(0, 0, 0, 145),
                         );
-                        icon_at(ui, art, Icon::Play, colours.text);
+                        icon_at(ui, art, Icon::Play, Color32::WHITE);
                     }
                     text(
                         ui,
@@ -1062,7 +1062,7 @@ impl AurafyApp {
                         &track.name,
                         13.0,
                         colours.text,
-                        r.width() - 104.0,
+                        (r.width() - 132.0).max(0.0),
                     );
                     text(
                         ui,
@@ -1078,7 +1078,7 @@ impl AurafyApp {
                         &track,
                         r.min + Vec2::new(97.0, 31.0),
                         11.0,
-                        r.width() - 140.0,
+                        (r.width() - 168.0).max(0.0),
                     );
                     let queue = action_at(
                         ui,
@@ -1114,7 +1114,7 @@ impl AurafyApp {
                         && response.clicked()
                         && response
                             .interact_pointer_pos()
-                            .is_some_and(|pos| pos.x < r.right() - 38.0)
+                            .is_some_and(|pos| pos.x < r.right() - 71.0)
                     {
                         self.play_search_track(track.clone(), ctx);
                     }
@@ -1427,8 +1427,9 @@ impl AurafyApp {
                                                 card_rect.right_bottom() - Vec2::splat(34.0),
                                                 Vec2::splat(44.0),
                                             );
-                                            let playing_top = self.current_track.uri == top.uri
-                                                && self.is_playing;
+                                            let current_top = !top.id.is_empty()
+                                                && top.id == self.current_track.id;
+                                            let playing_top = current_top && self.is_playing;
                                             let play_resp = playlist_play_at(
                                                 ui,
                                                 play_rect,
@@ -1445,9 +1446,7 @@ impl AurafyApp {
                                             {
                                                 if playing_top {
                                                     self.send_playback_action("pause", ctx);
-                                                } else if self.current_track.uri == top.uri
-                                                    && !self.is_playing
-                                                {
+                                                } else if current_top {
                                                     self.send_playback_action("resume", ctx);
                                                 } else {
                                                     self.play_search_track(top, ctx);
@@ -1469,7 +1468,8 @@ impl AurafyApp {
                                                     Vec2::new(right_w, 46.0),
                                                     Sense::click(),
                                                 );
-                                                let current = track.uri == self.current_track.uri;
+                                                let current = !track.id.is_empty()
+                                                    && track.id == self.current_track.id;
                                                 if resp.hovered() {
                                                     ui.painter().rect_filled(r, 7.0, colours.hover);
                                                 }
@@ -1568,10 +1568,12 @@ impl AurafyApp {
                             } else if !cat.tracks.is_empty() {
                                 ui.label(RichText::new("Songs").size(18.0).strong());
                                 ui.add_space(6.0);
-                                self.draw_track_table(
+                                self.draw_track_rows(
                                     ui,
                                     ctx,
                                     cat.tracks.iter().take(6).cloned().collect(),
+                                    false,
+                                    true,
                                 );
                             }
                             ui.add_space(20.0);
@@ -1792,7 +1794,7 @@ impl AurafyApp {
             } else if self.playlist_tracks.is_empty() {
                 ui.label(RichText::new("This playlist has no songs.").color(colours.muted));
             } else {
-                self.draw_track_rows(ui, ctx, self.playlist_tracks.clone(), filter_changed);
+                self.draw_track_rows(ui, ctx, self.playlist_tracks.clone(), filter_changed, false);
             }
             return;
         }
@@ -1861,7 +1863,7 @@ impl AurafyApp {
     }
 
     fn draw_track_table(&mut self, ui: &mut Ui, ctx: &egui::Context, tracks: Vec<Track>) {
-        self.draw_track_rows(ui, ctx, tracks, false);
+        self.draw_track_rows(ui, ctx, tracks, false, false);
     }
 
     fn draw_track_rows(
@@ -1870,6 +1872,7 @@ impl AurafyApp {
         ctx: &egui::Context,
         tracks: Vec<Track>,
         reset_scroll: bool,
+        inline: bool,
     ) {
         let colours = appearance::palette(ctx);
         if tracks.is_empty() {
@@ -2135,7 +2138,7 @@ impl AurafyApp {
         if reset_scroll {
             scroll = scroll.vertical_scroll_offset(0.0);
         }
-        scroll.show_rows(ui, row_h - 4.0, row_count, |ui, range| {
+        let mut draw_rows = |ui: &mut Ui, range: std::ops::Range<usize>| {
             for row in range {
                 let i = display_indices[row];
                 let track = &tracks[i];
@@ -2285,7 +2288,12 @@ impl AurafyApp {
                     self.play_table_track(track.clone(), i, ctx);
                 }
             }
-        });
+        };
+        if inline {
+            draw_rows(ui, 0..row_count);
+        } else {
+            scroll.show_rows(ui, row_h - 4.0, row_count, draw_rows);
+        }
     }
 
     fn track_menu(
@@ -2479,10 +2487,13 @@ impl AurafyApp {
                 if busy { colours.muted } else { colours.text },
                 new_rect.width() - 36.0,
             );
-            if new_response.clicked() && !busy {
+            if new_response.clicked() && !busy && self.is_connected() {
                 self.show_add_to_playlist = false;
                 self.show_create_playlist = true;
                 ui.close();
+            }
+            if !self.is_connected() {
+                new_response.on_hover_text("Connect Spotify to create playlists");
             }
             ui.separator();
             ui.label(
@@ -2513,7 +2524,7 @@ impl AurafyApp {
                             Rect::from_min_size(rect.min + Vec2::new(4.0, 8.0), Vec2::splat(36.0));
                         ui.painter()
                             .rect_filled(art, 5.0, Color32::from_rgb(89, 66, 156));
-                        icon_at(ui, art.shrink(5.0), Icon::Heart, colours.text);
+                        icon_at(ui, art.shrink(5.0), Icon::Heart, Color32::WHITE);
                         text(
                             ui,
                             rect.min + Vec2::new(50.0, 8.0),
@@ -2594,6 +2605,7 @@ impl AurafyApp {
                             if compact_pill_button(ui, "Try again", Some(Icon::Refresh), false)
                                 .clicked()
                             {
+                                self.last_home_load = None;
                                 self.load_home_data(ctx);
                             }
                         }

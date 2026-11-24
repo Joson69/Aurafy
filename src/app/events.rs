@@ -32,12 +32,13 @@ impl AurafyApp {
     pub(crate) fn handle_events(&mut self, ctx: &egui::Context) {
         self.poll_free_player(ctx);
         self.poll_playlist_editor(ctx);
-        while let Ok(event) = self.rx.try_recv() {
+        while let Ok(event) = self.rx.try_recv().or_else(|_| self.spotify_rx.try_recv()) {
             // Responses already in flight must not reconnect a signed-out account.
             if self.token.is_none()
                 && matches!(
                     &event,
                     AppEvent::SearchFinished { token: Some(_), .. }
+                        | AppEvent::SearchCatalogFinished { token: Some(_), .. }
                         | AppEvent::ArtistLoaded { token: Some(_), .. }
                         | AppEvent::ArtistSongsLoaded { token: Some(_), .. }
                         | AppEvent::ArtistAlbumsLoaded { token: Some(_), .. }
@@ -76,6 +77,8 @@ impl AurafyApp {
                     if let Ok(uris) = uris {
                         if uris.contains(&self.playlist_picker_track_uri) {
                             self.playlist_picker_added.insert(playlist_id.clone());
+                        } else {
+                            self.playlist_picker_added.remove(&playlist_id);
                         }
                         self.playlist_membership.insert(playlist_id, uris);
                     }
@@ -249,11 +252,15 @@ impl AurafyApp {
                         .is_some_and(|cancelled| cancelled.load(Ordering::Relaxed));
                     if cancelled {
                         self.auth_error = None;
+                        self.search_loading = false;
+                        self.artist_loading = false;
+                        self.browse.album_loading = false;
                         self.set_status("Spotify sign-in cancelled · You can connect again");
                         continue;
                     }
                     match result {
                         Ok(token) => {
+                            self.reset_spotify_requests();
                             self.auth_error = None;
                             self.accept_token(token);
                             if self.current_track.id.starts_with("demo-") {
@@ -273,8 +280,8 @@ impl AurafyApp {
                                 self.progress = 0.0;
                                 self.duration_ms = 1;
                             }
-                            self.last_player_poll = Instant::now() - Duration::from_secs(10);
-                            self.last_queue_poll = Instant::now() - Duration::from_secs(30);
+                            self.last_player_poll = None;
+                            self.last_queue_poll = None;
                             self.set_status(
                                 "Spotify connected · Live search and Connect controls enabled",
                             );
@@ -305,6 +312,8 @@ impl AurafyApp {
                         Err(error) => {
                             self.auth_error = Some(error.clone());
                             self.search_loading = false;
+                            self.artist_loading = false;
+                            self.browse.album_loading = false;
                             if self.page == Page::Search {
                                 self.search_error = Some(error.clone());
                             }
@@ -383,18 +392,16 @@ impl AurafyApp {
                                     if self.local_player.is_some() && !self.follow_remote_device {
                                         self.local_command("refresh_context", vec![]);
                                     }
-                                    self.last_queue_poll = Instant::now() - Duration::from_secs(30);
-                                    self.last_player_poll =
-                                        Instant::now() - Duration::from_secs(10);
+                                    self.last_queue_poll = None;
+                                    self.last_player_poll = None;
                                     self.set_status("Collection playback started");
                                 }
                                 "next" => self.set_status("Skipped to next track"),
                                 "previous" => self.set_status("Went to previous track"),
                                 value if value.starts_with("queue:") => {
                                     self.set_status("Added to queue");
-                                    self.last_queue_poll = Instant::now() - Duration::from_secs(30);
-                                    self.last_player_poll =
-                                        Instant::now() - Duration::from_secs(10);
+                                    self.last_queue_poll = None;
+                                    self.last_player_poll = None;
                                 }
                                 value if value.starts_with("save:") => {
                                     if let Some((track, _)) =
@@ -442,8 +449,7 @@ impl AurafyApp {
                                         }
                                     }
                                     self.set_status("Added track to playlist");
-                                    self.last_library_poll =
-                                        Instant::now() - Duration::from_secs(60);
+                                    self.last_library_poll = None;
                                     let playlist_id = value.split(':').nth(1).unwrap_or_default();
                                     if let Some(playlist) = self
                                         .playlists
@@ -463,13 +469,17 @@ impl AurafyApp {
                                             .as_ref()
                                             .map(|item| item.id.as_str())
                                             == Some(playlist_id)
+                                            && self.page == Page::Library
                                         {
                                             self.open_playlist(playlist, ctx);
                                         }
                                     }
                                 }
                                 value if value.starts_with("device:") => {
-                                    if value != "device:Aurafy" {
+                                    self.stop_free_player();
+                                    if value.strip_prefix("device:")
+                                        != Some(self.local_device_name().as_str())
+                                    {
                                         self.select_local_on_ready = false;
                                         self.follow_remote_device = true;
                                     }
@@ -484,7 +494,7 @@ impl AurafyApp {
                                 _ => {}
                             }
                             if action != "volume" {
-                                self.last_player_poll = Instant::now() - Duration::from_secs(10);
+                                self.last_player_poll = None;
                             }
                             if action == "pause"
                                 || action == "resume"
@@ -531,7 +541,7 @@ impl AurafyApp {
                                     self.library_changes.remove(id);
                                 }
                                 self.library_revision += 1;
-                                self.last_library_poll = Instant::now() - Duration::from_secs(60);
+                                self.last_library_poll = None;
                             }
                             if action.starts_with("playlist_add:")
                                 || action.starts_with("playlist_remove:")
@@ -540,7 +550,7 @@ impl AurafyApp {
                                 self.playlist_add_pending = None;
                                 self.playlist_add_error = Some(error.clone());
                             }
-                            self.last_player_poll = Instant::now() - Duration::from_secs(10);
+                            self.last_player_poll = None;
                             self.set_status(error);
                         }
                     }
@@ -571,7 +581,7 @@ impl AurafyApp {
                                 self.handle_ad_block(is_ad, ctx);
                             }
                         }
-                        Ok(None) if !self.local_status.active => {
+                        Ok(None) if !self.local_status.active && !self.use_free_player() => {
                             self.follow_remote_device = false;
                             self.is_playing = false;
                             self.device_name = None;
@@ -611,10 +621,11 @@ impl AurafyApp {
                     if let Some(token) = token {
                         self.accept_token(token);
                     }
+                    if revision != self.library_revision {
+                        self.library_refresh_needed = true;
+                        continue;
+                    }
                     match saved_tracks {
-                        _ if revision != self.library_revision => {
-                            self.library_refresh_needed = true;
-                        }
                         Ok(tracks) => {
                             self.saved_track_ids =
                                 tracks.iter().map(|track| track.id.clone()).collect();
@@ -646,6 +657,7 @@ impl AurafyApp {
                     }
                 }
                 AppEvent::PlaylistLoaded {
+                    generation,
                     playlist_id,
                     tracks,
                     token,
@@ -653,11 +665,12 @@ impl AurafyApp {
                     if let Some(token) = token {
                         self.accept_token(token);
                     }
-                    if self
-                        .selected_playlist
-                        .as_ref()
-                        .map(|playlist| playlist.id.as_str())
-                        == Some(playlist_id.as_str())
+                    if generation == self.playlist_load_generation
+                        && self
+                            .selected_playlist
+                            .as_ref()
+                            .map(|playlist| playlist.id.as_str())
+                            == Some(playlist_id.as_str())
                     {
                         self.playlist_loading = false;
                         match tracks {
@@ -704,6 +717,7 @@ impl AurafyApp {
                     match result {
                         Ok(playlist) => {
                             let name = playlist.name.clone();
+                            self.library_revision += 1;
                             self.playlists.insert(0, playlist.clone());
                             self.page = Page::Library;
                             self.set_status(format!("Created playlist ‘{name}’"));
@@ -923,6 +937,7 @@ impl eframe::App for AurafyApp {
         if self.window_restore_pending.is_some() {
             ctx.request_repaint_after(Duration::from_millis(20));
         }
+        #[cfg(target_os = "windows")]
         if !self.startup_launch_handled
             && self.window_restore_pending.is_none()
             && self
@@ -976,7 +991,11 @@ impl eframe::App for AurafyApp {
             self.show_settings = false;
         }
 
-        if !ctx.wants_keyboard_input() {
+        let slider_focus =
+            ctx.data(|data| data.get_temp::<egui::Id>(egui::Id::new("player-slider-focus")));
+        let slider_has_focus =
+            slider_focus.is_some() && ctx.memory(|memory| memory.focused()) == slider_focus;
+        if !ctx.wants_keyboard_input() || slider_has_focus {
             let (toggle, previous, next, quit, seek_back, seek_forward, volume_down, volume_up) =
                 ctx.input(|input| {
                     (
@@ -1020,11 +1039,15 @@ impl eframe::App for AurafyApp {
         if self.is_connected()
             && !self.local_status.active
             && !self.player_poll_in_progress
-            && self.last_player_poll.elapsed() >= Duration::from_secs(3)
+            && self
+                .last_player_poll
+                .is_none_or(|last| last.elapsed() >= Duration::from_secs(3))
         {
             let include_queue = (!self.config.local_playback || self.follow_remote_device)
                 && self.show_queue
-                && self.last_queue_poll.elapsed() >= Duration::from_secs(18);
+                && self
+                    .last_queue_poll
+                    .is_none_or(|last| last.elapsed() >= Duration::from_secs(18));
             self.poll_player(ctx, include_queue);
         }
         if self.is_playing {

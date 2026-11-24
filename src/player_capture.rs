@@ -148,12 +148,13 @@ impl Session {
             .save(self.directory.join(format!("aurafy-{tag}.png")))
             .map_err(|error| error.to_string())?;
         let scale = source.width() as f32 / ctx.content_rect().width();
-        let top = ((layout.bounds.top() * scale).round().max(0.0) as u32).min(image.height() - 1);
+        let top = ((layout.bounds.top() * scale).round().max(0.0) as u32)
+            .min(image.height().saturating_sub(1));
         let height = (layout.bounds.height() * scale).round() as u32;
         image::imageops::crop_imm(
             &image,
             0,
-            top.min(image.height() - 1),
+            top.min(image.height().saturating_sub(1)),
             image.width(),
             height.min(image.height() - top),
         )

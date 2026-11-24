@@ -183,14 +183,14 @@ fn hidden_command(path: impl AsRef<std::ffi::OsStr>) -> Command {
     command
 }
 
-fn engine_path() -> Result<PathBuf, String> {
+pub(crate) fn existing_engine_path() -> Option<PathBuf> {
     let installed = directory().join("bin/soloist.exe");
     if installed.is_file() {
-        return Ok(installed);
+        return Some(installed);
     }
     let legacy = legacy_directory().join("bin/soloist.exe");
     if legacy.is_file() {
-        return Ok(legacy);
+        return Some(legacy);
     }
     if let Ok(executable) = std::env::current_exe()
         && let Some(parent) = executable.parent()
@@ -200,22 +200,40 @@ fn engine_path() -> Result<PathBuf, String> {
             parent.join("../tools/soloist/soloist.exe"),
         ] {
             if candidate.is_file() {
-                return Ok(candidate);
+                return Some(candidate);
             }
         }
     }
+    None
+}
+
+fn engine_path() -> Result<PathBuf, String> {
+    if let Some(path) = existing_engine_path() {
+        return Ok(path);
+    }
+    let installed = directory().join("bin/soloist.exe");
     install_engine(&installed)?;
     Ok(installed)
 }
 
 #[cfg(windows)]
 fn install_engine(path: &std::path::Path) -> Result<(), String> {
+    static INSTALL: Mutex<()> = Mutex::new(());
+    let _install = INSTALL
+        .lock()
+        .map_err(|_| "Playback engine installation is unavailable")?;
+    if path.is_file() {
+        return Ok(());
+    }
     let destination = path
         .parent()
         .ok_or("Could not locate the playback engine folder")?;
     fs::create_dir_all(destination)
         .map_err(|e| format!("Could not create playback engine folder: {e}"))?;
-    let archive = directory().join("soloist-download.zip");
+    let archive = directory().join(format!(
+        "soloist-download-{:016x}.zip",
+        rand::random::<u64>()
+    ));
     let response = spotify::http_client()?.get(DOWNLOAD).send()
         .map_err(|_| "Could not download Spotify's playback engine. Check your internet connection and try again.".to_string())?
         .error_for_status().map_err(|e| format!("Playback engine download failed: {e}"))?;
@@ -500,6 +518,10 @@ fn observe(
     notify: &impl Fn(Event),
 ) -> Result<(), String> {
     let mut state = State {
+        playback: PlaybackState {
+            device_name: Some(device_name.clone()),
+            ..State::default().playback
+        },
         device_name,
         ..Default::default()
     };
@@ -617,60 +639,66 @@ fn socket_loop(
 ) -> Result<(), String> {
     // Managed-session verification follows Spotifast's Soloist lifecycle.
     // See THIRD_PARTY_NOTICES.md for the pinned reference and MIT notice.
-    let mut last_auth_check = Instant::now() - Duration::from_secs(30);
-    let mut last_queue_refresh = Instant::now() - Duration::from_secs(5);
+    let mut last_auth_check = None;
+    let mut last_queue_refresh = None;
     while !stop.load(Ordering::Relaxed) {
         state.check_auth_timeout(notify);
         let interval = Duration::from_secs(if state.status.paired { 30 } else { 2 });
-        if last_auth_check.elapsed() >= interval {
+        if last_auth_check.is_none_or(|last: Instant| last.elapsed() >= interval) {
             send(socket, &request("get_auth_state"))?;
             if state.status.paired {
                 send(socket, &request("get_state"))?;
             }
-            last_auth_check = Instant::now();
+            last_auth_check = Some(Instant::now());
         }
         if state.status.paired
             && let Ok(job) = jobs.try_recv()
         {
-            let mut result = Ok(());
-            for request in job.requests {
-                send(socket, &request)?;
-                let deadline = Instant::now() + Duration::from_secs(5);
-                loop {
-                    if stop.load(Ordering::Relaxed) {
-                        return Ok(());
-                    }
-                    if Instant::now() >= deadline {
-                        result =
-                            Err("Spotify did not confirm the playback command. Try again.".into());
-                        break;
-                    }
-                    if let Some(event) = read(socket)? {
-                        match event["type"].as_str() {
-                            Some("command_result") if event["command"] == request["command"] => {
-                                break;
-                            }
-                            Some("error") => {
-                                result = Err(event["message"]
-                                    .as_str()
-                                    .unwrap_or("Local playback command failed")
-                                    .chars()
-                                    .take(240)
-                                    .collect());
-                                break;
-                            }
-                            _ => {
-                                if state.apply(&event, notify) && state.status.paired {
-                                    send(socket, &self::request("get_state"))?;
+            let command_result = (|| -> Result<Result<(), String>, String> {
+                let mut result = Ok(());
+                for request in job.requests {
+                    send(socket, &request)?;
+                    let deadline = Instant::now() + Duration::from_secs(5);
+                    loop {
+                        if stop.load(Ordering::Relaxed) {
+                            return Ok(Err("Local playback was stopped.".into()));
+                        }
+                        if Instant::now() >= deadline {
+                            result =
+                                Err("Spotify did not confirm the playback command. Try again."
+                                    .into());
+                            break;
+                        }
+                        if let Some(event) = read(socket)? {
+                            match event["type"].as_str() {
+                                Some("command_result")
+                                    if event["command"] == request["command"] =>
+                                {
+                                    break;
+                                }
+                                Some("error") => {
+                                    result = Err(event["message"]
+                                        .as_str()
+                                        .unwrap_or("Local playback command failed")
+                                        .chars()
+                                        .take(240)
+                                        .collect());
+                                    break;
+                                }
+                                _ => {
+                                    if state.apply(&event, notify) && state.status.paired {
+                                        send(socket, &self::request("get_state"))?;
+                                    }
                                 }
                             }
                         }
                     }
+                    if result.is_err() {
+                        break;
+                    }
                 }
-                if result.is_err() {
-                    break;
-                }
-            }
+                Ok(result)
+            })();
             let refresh_queue = matches!(
                 job.action.as_str(),
                 "play_track"
@@ -684,8 +712,9 @@ fn socket_loop(
             );
             notify(Event::CommandFinished {
                 action: job.action,
-                result,
+                result: command_result.clone().unwrap_or_else(Err),
             });
+            command_result?.ok();
             if state.status.paired {
                 send(socket, &request("get_state"))?;
                 if state.status.active && refresh_queue {
@@ -704,9 +733,10 @@ fn socket_loop(
         }
         if state.status.active
             && state.queue_dirty
-            && last_queue_refresh.elapsed() >= Duration::from_millis(300)
+            && last_queue_refresh
+                .is_none_or(|last: Instant| last.elapsed() >= Duration::from_millis(300))
         {
-            last_queue_refresh = Instant::now();
+            last_queue_refresh = Some(Instant::now());
             let port = socket
                 .get_ref()
                 .peer_addr()
@@ -806,7 +836,11 @@ impl Default for State {
         Self {
             device_name: DEVICE_NAME.into(),
             status: Status::default(),
-            playback: PlaybackState::default(),
+            playback: PlaybackState {
+                device_name: Some(DEVICE_NAME.into()),
+                repeat_state: "off".into(),
+                ..Default::default()
+            },
             progress_anchor: Instant::now(),
             auth_started: Instant::now(),
             queue_dirty: true,
