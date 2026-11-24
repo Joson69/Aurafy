@@ -1062,7 +1062,7 @@ impl AurafyApp {
                         &track.name,
                         13.0,
                         colours.text,
-                        r.width() - 104.0,
+                        (r.width() - 132.0).max(0.0),
                     );
                     text(
                         ui,
@@ -1078,7 +1078,7 @@ impl AurafyApp {
                         &track,
                         r.min + Vec2::new(97.0, 31.0),
                         11.0,
-                        r.width() - 140.0,
+                        (r.width() - 168.0).max(0.0),
                     );
                     let queue = action_at(
                         ui,
@@ -1114,7 +1114,7 @@ impl AurafyApp {
                         && response.clicked()
                         && response
                             .interact_pointer_pos()
-                            .is_some_and(|pos| pos.x < r.right() - 38.0)
+                            .is_some_and(|pos| pos.x < r.right() - 71.0)
                     {
                         self.play_search_track(track.clone(), ctx);
                     }
