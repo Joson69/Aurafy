@@ -299,6 +299,7 @@ fn run_worker(
     let mut current_uri: Option<String> = None;
     let mut current_duration_ms: u64 = 0;
     let mut ended_reported = false;
+    let mut user_paused = false;
     let mut last_tick = Instant::now();
 
     loop {
@@ -314,9 +315,8 @@ fn run_worker(
             match cmd {
                 FreeCommand::Play(track) => {
                     let uri_key = track.uri.clone();
-                    current_uri = Some(uri_key.clone());
-                    current_duration_ms = track.duration_ms.max(1);
-                    ended_reported = false;
+                    let _ = player.Pause();
+                    current_uri = None;
 
                     let cached = cache
                         .get(&uri_key)
@@ -346,8 +346,19 @@ fn run_worker(
                             if let Ok(win_uri) = Uri::CreateUri(&HSTRING::from(&url))
                                 && let Ok(source) = MediaSource::CreateFromUri(&win_uri)
                             {
-                                let _ = player.SetSource(&source);
-                                let _ = player.Play();
+                                if let Err(err) =
+                                    player.SetSource(&source).and_then(|_| player.Play())
+                                {
+                                    let _ = evt_tx.send(FreeEvent::Error(format!(
+                                        "Could not start resolved audio: {err}"
+                                    )));
+                                    ctx.request_repaint();
+                                    continue;
+                                }
+                                current_uri = Some(uri_key.clone());
+                                current_duration_ms = track.duration_ms.max(1);
+                                ended_reported = false;
+                                user_paused = false;
                                 let _ = evt_tx.send(FreeEvent::State {
                                     uri: uri_key,
                                     is_playing: true,
@@ -368,12 +379,16 @@ fn run_worker(
                     }
                 }
                 FreeCommand::Pause => {
+                    user_paused = true;
                     let _ = player.Pause();
                 }
                 FreeCommand::Resume => {
+                    user_paused = false;
+                    ended_reported = false;
                     let _ = player.Play();
                 }
                 FreeCommand::Seek(ms) => {
+                    ended_reported = false;
                     if let Ok(session) = player.PlaybackSession() {
                         let ticks = (ms as i64) * 10_000;
                         let _ =
@@ -403,13 +418,15 @@ fn run_worker(
                 let dur_ms = session
                     .NaturalDuration()
                     .map(|ts| (ts.Duration.max(0) / 10_000) as u64)
-                    .unwrap_or(current_duration_ms)
-                    .max(current_duration_ms);
+                    .ok()
+                    .filter(|duration| *duration > 0)
+                    .unwrap_or(current_duration_ms);
                 let is_playing = state == MediaPlaybackState::Playing
                     || state == MediaPlaybackState::Buffering
                     || state == MediaPlaybackState::Opening;
 
                 if !ended_reported
+                    && !user_paused
                     && dur_ms > 1500
                     && state == MediaPlaybackState::Paused
                     && pos_ms.saturating_add(800) >= dur_ms
