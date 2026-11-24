@@ -389,19 +389,17 @@ impl AurafyApp {
                                 custom_accent: None,
                                 ..self.config.display
                             },
-                            None,
+                            ui.ctx().system_theme(),
                             None,
                         )
                         .green;
-                        let mut color = self
-                            .config
-                            .display
-                            .custom_accent
-                            .map(|[r, g, b]| Color32::from_rgb(r, g, b))
-                            .unwrap_or(base_green);
-                        if ui.color_edit_button_srgba(&mut color).changed() {
-                            self.config.display.custom_accent =
-                                Some([color.r(), color.g(), color.b()]);
+                        let mut color = self.config.display.custom_accent.unwrap_or([
+                            base_green.r(),
+                            base_green.g(),
+                            base_green.b(),
+                        ]);
+                        if ui.color_edit_button_srgb(&mut color).changed() {
+                            self.config.display.custom_accent = Some(color);
                             changed = true;
                         }
                         if self.config.display.custom_accent.is_some()
