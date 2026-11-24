@@ -87,9 +87,9 @@ pub fn reclaim(executable: &std::path::Path, data: &std::path::Path) -> Result<(
     if unsafe { WaitForSingleObject(handle.as_raw_handle(), 0) } == WAIT_OBJECT_0 {
         return Ok(());
     }
-    if unsafe { TerminateProcess(handle.as_raw_handle(), 0) } == 0
-        || unsafe { WaitForSingleObject(handle.as_raw_handle(), 5000) } != WAIT_OBJECT_0
-    {
+    // The process can exit between the first wait and the termination call.
+    let _ = unsafe { TerminateProcess(handle.as_raw_handle(), 0) };
+    if unsafe { WaitForSingleObject(handle.as_raw_handle(), 5000) } != WAIT_OBJECT_0 {
         return Err("The previous Aurafy player could not close. Quit that player, then reconnect local playback.".into());
     }
     Ok(())
