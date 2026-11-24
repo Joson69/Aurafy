@@ -12,7 +12,7 @@ impl AurafyApp {
         self.devices_loading = true;
         self.last_devices_poll = Instant::now();
         let client_id = self.config.client_id.clone();
-        let tx = self.tx.clone();
+        let tx = self.spotify_tx.clone();
         let ctx = ctx.clone();
         thread::spawn(move || {
             let (token, devices) = match spotify::refresh_if_needed(token, &client_id) {
@@ -90,7 +90,7 @@ impl AurafyApp {
         let range = self.insights.range;
         #[cfg(not(test))]
         {
-            let tx = self.tx.clone();
+            let tx = self.spotify_tx.clone();
             let ctx = ctx.clone();
             let client_id = self.config.client_id.clone();
             thread::spawn(move || {
@@ -129,7 +129,7 @@ impl AurafyApp {
         self.recent_error = None;
         self.last_home_load = Some(Instant::now());
         let client_id = self.config.client_id.clone();
-        let tx = self.tx.clone();
+        let tx = self.spotify_tx.clone();
         let ctx = ctx.clone();
         thread::spawn(move || {
             let (token, recent_tracks, profile) =

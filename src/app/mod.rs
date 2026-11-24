@@ -394,6 +394,8 @@ pub(crate) struct AurafyApp {
     pub(crate) logo_texture: egui::TextureHandle,
     pub(crate) tx: Sender<AppEvent>,
     pub(crate) rx: Receiver<AppEvent>,
+    pub(crate) spotify_tx: Sender<AppEvent>,
+    spotify_rx: Receiver<AppEvent>,
     pub(crate) token: Option<TokenState>,
 
     pub(crate) page: Page,
@@ -668,7 +670,7 @@ impl AurafyApp {
             if let Some(refresh_token) = spotify::load_refresh_token() {
                 app.auth_in_progress = true;
                 app.auth_cancel = Some(Arc::new(AtomicBool::new(false)));
-                let tx = app.tx.clone();
+                let tx = app.spotify_tx.clone();
                 let client_id = app.config.client_id.clone();
                 let ctx = cc.egui_ctx.clone();
                 thread::spawn(move || {
@@ -708,6 +710,7 @@ impl AurafyApp {
         ctx.set_zoom_factor(config.display.zoom());
 
         let (tx, rx) = mpsc::channel();
+        let (spotify_tx, spotify_rx) = mpsc::channel();
         let demo_tracks = demo_tracks();
         let configured = !config.client_id.trim().is_empty() || config.local_playback;
         let current_track = if configured {
@@ -777,6 +780,8 @@ impl AurafyApp {
             logo_texture: desktop::logo_texture(ctx),
             tx,
             rx,
+            spotify_tx,
+            spotify_rx,
             token: None,
             page,
             search_query: search_query.clone(),

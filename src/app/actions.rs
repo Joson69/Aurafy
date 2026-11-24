@@ -23,7 +23,7 @@ impl AurafyApp {
         let cancelled = Arc::new(AtomicBool::new(false));
         self.auth_cancel = Some(cancelled.clone());
         self.set_status("Opening Spotify sign-in in your browser…");
-        let tx = self.tx.clone();
+        let tx = self.spotify_tx.clone();
         let client_id = self.config.client_id.clone();
         let ctx = ctx.clone();
         thread::spawn(move || {
@@ -41,7 +41,31 @@ impl AurafyApp {
         });
     }
 
+    pub(crate) fn reset_spotify_requests(&mut self) {
+        (self.spotify_tx, self.spotify_rx) = mpsc::channel();
+        self.library_loading = false;
+        self.player_poll_in_progress = false;
+        self.playlist_creation_in_progress = false;
+        self.playlist_loading = false;
+        self.search_loading = false;
+        self.artist_loading = false;
+        self.browse.album_loading = false;
+        self.devices_loading = false;
+        self.recent_loading = false;
+        self.last_home_load = None;
+    }
+
     pub(crate) fn disconnect_spotify(&mut self) {
+        if let Some(cancelled) = self.auth_cancel.take() {
+            cancelled.store(true, Ordering::Relaxed);
+        }
+        self.auth_in_progress = false;
+        self.auth_url = None;
+        self.reset_spotify_requests();
+        self.search_results.clear();
+        self.search_catalog = None;
+        self.search_error = None;
+        self.show_create_playlist = false;
         self.stop_local_playback();
         self.insights.reset();
         self.membership_generation = self.membership_generation.wrapping_add(1);
@@ -154,7 +178,7 @@ impl AurafyApp {
         }
 
         if let Some(token) = self.token.clone() {
-            let tx = self.tx.clone();
+            let tx = self.spotify_tx.clone();
             let client_id = self.config.client_id.clone();
             let ctx = ctx.clone();
             thread::spawn(move || {
@@ -361,7 +385,7 @@ impl AurafyApp {
         }
         #[cfg(not(test))]
         {
-            let tx = self.tx.clone();
+            let tx = self.spotify_tx.clone();
             let client_id = self.config.client_id.clone();
             let ctx = ctx.clone();
             thread::spawn(move || {
@@ -571,7 +595,7 @@ impl AurafyApp {
                 && (start.uri.starts_with("spotify:playlist:")
                     || start.uri.starts_with("spotify:album:"))
             {
-                let tx = self.tx.clone();
+                let tx = self.spotify_tx.clone();
                 let ctx_clone = ctx.clone();
                 let client_id = self.config.client_id.clone();
                 self.set_status("Loading collection tracks…");
@@ -984,7 +1008,7 @@ impl AurafyApp {
         #[cfg(not(test))]
         {
             let client_id = self.config.client_id.clone();
-            let tx = self.tx.clone();
+            let tx = self.spotify_tx.clone();
             let ctx = ctx.clone();
             thread::spawn(move || {
                 let (token, result) = match spotify::refresh_if_needed(token, &client_id) {

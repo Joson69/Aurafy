@@ -32,12 +32,13 @@ impl AurafyApp {
     pub(crate) fn handle_events(&mut self, ctx: &egui::Context) {
         self.poll_free_player(ctx);
         self.poll_playlist_editor(ctx);
-        while let Ok(event) = self.rx.try_recv() {
+        while let Ok(event) = self.rx.try_recv().or_else(|_| self.spotify_rx.try_recv()) {
             // Responses already in flight must not reconnect a signed-out account.
             if self.token.is_none()
                 && matches!(
                     &event,
                     AppEvent::SearchFinished { token: Some(_), .. }
+                        | AppEvent::SearchCatalogFinished { token: Some(_), .. }
                         | AppEvent::ArtistLoaded { token: Some(_), .. }
                         | AppEvent::ArtistSongsLoaded { token: Some(_), .. }
                         | AppEvent::ArtistAlbumsLoaded { token: Some(_), .. }
@@ -254,6 +255,7 @@ impl AurafyApp {
                     }
                     match result {
                         Ok(token) => {
+                            self.reset_spotify_requests();
                             self.auth_error = None;
                             self.accept_token(token);
                             if self.current_track.id.starts_with("demo-") {

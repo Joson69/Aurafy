@@ -4336,3 +4336,29 @@ fn collect_shape_text(shape: &egui::Shape, target: &str, out: &mut Vec<Rect>) {
         _ => {}
     }
 }
+
+#[test]
+fn replacing_spotify_session_drops_old_replies_and_clears_requests() {
+    let ctx = egui::Context::default();
+    let mut app = fixture(&ctx);
+    let old_session = app.spotify_tx.clone();
+    app.library_loading = true;
+    app.player_poll_in_progress = true;
+    app.playlist_creation_in_progress = true;
+    app.search_loading = true;
+    let reply = || AppEvent::SearchCatalogFinished {
+        query: "old search".into(),
+        result: Ok(Default::default()),
+        token: app.token.clone(),
+    };
+    old_session.send(reply()).unwrap();
+    let late_reply = reply();
+    app.reset_spotify_requests();
+    assert!(old_session.send(late_reply).is_err());
+    app.handle_events(&ctx);
+    assert!(app.search_catalog.is_none());
+    assert!(!app.library_loading);
+    assert!(!app.player_poll_in_progress);
+    assert!(!app.playlist_creation_in_progress);
+    assert!(!app.search_loading);
+}

@@ -78,7 +78,7 @@ impl AurafyApp {
             #[cfg(not(test))]
             {
                 let generation = self.browse.generation;
-                let tx = self.tx.clone();
+                let tx = self.spotify_tx.clone();
                 let client_id = self.config.client_id.clone();
                 let ctx = ctx.clone();
                 thread::spawn(move || {
@@ -128,7 +128,7 @@ impl AurafyApp {
             let id = self.browse.artist_id.clone();
             let name = self.artist_name.clone();
             let client_id = self.config.client_id.clone();
-            let tx = self.tx.clone();
+            let tx = self.spotify_tx.clone();
             let ctx = ctx.clone();
             thread::spawn(move || {
                 match spotify::refresh_if_needed(token, &client_id) {
@@ -213,7 +213,7 @@ impl AurafyApp {
             #[cfg(not(test))]
             {
                 let generation = self.browse.generation;
-                let tx = self.tx.clone();
+                let tx = self.spotify_tx.clone();
                 let client_id = self.config.client_id.clone();
                 let ctx = ctx.clone();
                 thread::spawn(move || {

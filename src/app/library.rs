@@ -74,7 +74,7 @@ impl AurafyApp {
         self.membership_loading = true;
         #[cfg(not(test))]
         {
-            let tx = self.tx.clone();
+            let tx = self.spotify_tx.clone();
             let ctx = ctx.clone();
             let generation = self.membership_generation;
             let client = self.config.client_id.clone();
@@ -145,7 +145,7 @@ impl AurafyApp {
         let description = self.new_playlist_description.trim().to_string();
         let is_public = self.new_playlist_public;
         let client_id = self.config.client_id.clone();
-        let tx = self.tx.clone();
+        let tx = self.spotify_tx.clone();
         let ctx = ctx.clone();
         self.show_create_playlist = false;
         self.playlist_creation_in_progress = true;
@@ -305,7 +305,7 @@ impl AurafyApp {
         let revision = self.library_revision;
         let token = self.token.clone().unwrap();
         let client_id = self.config.client_id.clone();
-        let tx = self.tx.clone();
+        let tx = self.spotify_tx.clone();
         let ctx = ctx.clone();
         thread::spawn(move || {
             let result = spotify::refresh_if_needed(token, &client_id);
@@ -351,7 +351,7 @@ impl AurafyApp {
         }
         self.playlist_loading = true;
         let playlist_id = playlist.id.clone();
-        let tx = self.tx.clone();
+        let tx = self.spotify_tx.clone();
         let ctx = ctx.clone();
         let client_id = self.config.client_id.clone();
         let token = self.token.clone().unwrap();
@@ -385,7 +385,7 @@ impl AurafyApp {
             self.last_queue_poll = Instant::now();
         }
         let client_id = self.config.client_id.clone();
-        let tx = self.tx.clone();
+        let tx = self.spotify_tx.clone();
         let ctx = ctx.clone();
         thread::spawn(move || {
             let refreshed = spotify::refresh_if_needed(token, &client_id);
