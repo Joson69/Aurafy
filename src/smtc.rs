@@ -32,6 +32,7 @@ pub(crate) struct Controls {
     last_identity: String,
     last_art: String,
     last_timeline_at: Option<Instant>,
+    last_timeline_position: Option<u64>,
 }
 
 impl Controls {
@@ -88,6 +89,7 @@ impl Controls {
             last_identity: String::new(),
             last_art: String::new(),
             last_timeline_at: None,
+            last_timeline_position: None,
         })
     }
 
@@ -99,7 +101,8 @@ impl Controls {
         duration_ms: u64,
     ) {
         let has_track = !track.uri.is_empty() || !track.name.is_empty();
-        if self.last_playing != Some(is_playing) || self.last_has_track != Some(has_track) {
+        let playing_changed = self.last_playing != Some(is_playing);
+        if playing_changed || self.last_has_track != Some(has_track) {
             let status = if !has_track {
                 MediaPlaybackStatus::Stopped
             } else if is_playing {
@@ -140,9 +143,11 @@ impl Controls {
             self.last_timeline_at = None;
         }
 
-        let due = self
-            .last_timeline_at
-            .is_none_or(|t| is_playing && t.elapsed() >= Duration::from_secs(2));
+        let due = playing_changed
+            || (!is_playing && self.last_timeline_position != Some(position_ms))
+            || self
+                .last_timeline_at
+                .is_none_or(|t| is_playing && t.elapsed() >= Duration::from_secs(2));
         if due
             && duration_ms > 0
             && let Ok(timeline) = SystemMediaTransportControlsTimelineProperties::new()
@@ -157,6 +162,7 @@ impl Controls {
             });
             let _ = self.smtc.UpdateTimelineProperties(&timeline);
             self.last_timeline_at = Some(Instant::now());
+            self.last_timeline_position = Some(position_ms);
         }
     }
 }
