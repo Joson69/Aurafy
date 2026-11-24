@@ -196,6 +196,7 @@ impl AurafyApp {
             self.local_key_input.clear();
             key
         };
+        self.stop_free_player();
         self.local_player_generation = self.local_player_generation.wrapping_add(1);
         self.local_player.take();
         self.select_local_on_ready = true;
@@ -707,7 +708,17 @@ impl AurafyApp {
         player
     }
 
+    pub(crate) fn stop_free_player(&mut self) {
+        if let Some(player) = self.free_player.take() {
+            player.send(free_player::FreeCommand::Stop);
+        }
+    }
+
     pub(crate) fn poll_free_player(&mut self, ctx: &egui::Context) {
+        if !self.use_free_player() {
+            self.stop_free_player();
+            return;
+        }
         let Some(fp) = self.free_player.as_mut() else {
             return;
         };

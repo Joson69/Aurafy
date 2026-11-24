@@ -302,7 +302,15 @@ fn run_worker(
     let mut last_tick = Instant::now();
 
     loop {
-        while let Ok(cmd) = cmd_rx.try_recv() {
+        loop {
+            let cmd = match cmd_rx.try_recv() {
+                Ok(cmd) => cmd,
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    let _ = player.Pause();
+                    return;
+                }
+            };
             match cmd {
                 FreeCommand::Play(track) => {
                     let uri_key = track.uri.clone();

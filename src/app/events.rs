@@ -572,7 +572,7 @@ impl AurafyApp {
                                 self.handle_ad_block(is_ad, ctx);
                             }
                         }
-                        Ok(None) if !self.local_status.active => {
+                        Ok(None) if !self.local_status.active && !self.use_free_player() => {
                             self.follow_remote_device = false;
                             self.is_playing = false;
                             self.device_name = None;

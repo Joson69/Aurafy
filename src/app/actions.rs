@@ -66,6 +66,7 @@ impl AurafyApp {
         self.search_catalog = None;
         self.search_error = None;
         self.show_create_playlist = false;
+        self.stop_free_player();
         self.stop_local_playback();
         self.insights.reset();
         self.membership_generation = self.membership_generation.wrapping_add(1);
