@@ -729,6 +729,7 @@ impl AurafyApp {
     pub(crate) fn send_playback_action(&mut self, action: &str, ctx: &egui::Context) {
         if action == "pause" {
             self.priority_auto_armed = false;
+            self.resume_on_local_ready = false;
         } else if action == "next" {
             if !self.priority_queue.is_empty() {
                 let _ = self.play_next_priority_track(ctx);
@@ -747,7 +748,12 @@ impl AurafyApp {
             }
         }
         if self.local_starting && !self.follow_remote_device {
-            self.set_status("Restoring the local player… Please wait a moment.");
+            if action == "resume" && self.local_player.is_some() {
+                self.resume_on_local_ready = true;
+                self.set_status("Waiting for Aurafy to resume playback…");
+            } else {
+                self.set_status("Restoring the local player… Please wait a moment.");
+            }
             return;
         }
         if self.local_player.is_some() && !self.local_status.paired && self.device_name.is_none() {

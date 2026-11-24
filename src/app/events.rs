@@ -496,6 +496,21 @@ impl AurafyApp {
                             }
                         }
                         Err(error) => {
+                            if action == "resume"
+                                && error.ends_with(spotify::PLAYBACK_NOT_FOUND)
+                                && !self.is_playing
+                                && !self.local_status.active
+                                && self.config.local_playback
+                                && self.local_player.is_some()
+                                && (self.local_status.paired || self.local_starting)
+                            {
+                                self.follow_remote_device = false;
+                                self.device_name = None;
+                                self.device_id = None;
+                                self.playback_error = None;
+                                self.send_playback_action("resume", ctx);
+                                continue;
+                            }
                             if matches!(
                                 action.as_str(),
                                 "play_track"
@@ -557,6 +572,7 @@ impl AurafyApp {
                             }
                         }
                         Ok(None) if !self.local_status.active => {
+                            self.follow_remote_device = false;
                             self.is_playing = false;
                             self.device_name = None;
                             self.device_id = None;

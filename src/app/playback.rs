@@ -152,6 +152,7 @@ impl AurafyApp {
 
     pub(crate) fn transfer_to_device(&mut self, device: Device, ctx: &egui::Context) {
         self.volume_control = volume::Control::default();
+        self.resume_on_local_ready = false;
         if device.name == self.local_device_name_ref() && self.local_status.paired {
             self.listen_here(ctx);
             return;
@@ -257,6 +258,7 @@ impl AurafyApp {
     pub(crate) fn stop_local_playback(&mut self) {
         self.volume_control = volume::Control::default();
         self.select_local_on_ready = false;
+        self.resume_on_local_ready = false;
         self.local_player_generation = self.local_player_generation.wrapping_add(1);
         self.local_player.take();
         if self.local_status.active {
@@ -396,6 +398,9 @@ impl AurafyApp {
                     self.last_player_poll = Instant::now() - Duration::from_secs(10);
                     self.last_devices_poll = Instant::now() - Duration::from_secs(10);
                 }
+                if !status.running && !status.connecting {
+                    self.resume_on_local_ready = false;
+                }
                 if !status.running && !status.message.is_empty() {
                     self.playback_error = Some(status.message.clone());
                 }
@@ -410,6 +415,13 @@ impl AurafyApp {
                     };
                 }
                 self.local_status = status;
+                if self.local_status.paired
+                    && std::mem::take(&mut self.resume_on_local_ready)
+                    && !self.follow_remote_device
+                    && let Some(ctx) = ctx
+                {
+                    self.send_playback_action("resume", ctx);
+                }
                 if self.select_local_on_ready && self.local_status.paired {
                     self.select_local_on_ready = false;
                     let mut requests = Vec::new();

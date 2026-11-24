@@ -334,6 +334,9 @@ fn api_response(builder: RequestBuilder, context: &str) -> Result<Response, Stri
     checked_response(response, context)
 }
 
+pub(crate) const PLAYBACK_NOT_FOUND: &str =
+    "Spotify could not find the requested item or active playback device.";
+
 fn checked_response(response: Response, context: &str) -> Result<Response, String> {
     if response.status().is_success() {
         return Ok(response);
@@ -368,7 +371,7 @@ fn checked_response(response: Response, context: &str) -> Result<Response, Strin
         403 => "Spotify denied this action. Check Premium, app access, and requested permissions."
             .to_string(),
         429 => "Spotify rate limit reached. Wait a moment and try again.".to_string(),
-        404 => "Spotify could not find the requested item or active playback device.".to_string(),
+        404 => PLAYBACK_NOT_FOUND.to_owned(),
         _ if message.is_empty() => format!("HTTP {status}"),
         _ => format!("HTTP {status}: {message}"),
     };
