@@ -146,11 +146,21 @@ impl Library {
 struct Record {
     track_name: String,
     artist_name: String,
+    #[serde(deserialize_with = "null_as_default")]
     album_name: String,
+    #[serde(deserialize_with = "null_as_default")]
     duration: f64,
     instrumental: bool,
     plain_lyrics: Option<String>,
     synced_lyrics: Option<String>,
+}
+
+fn null_as_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 impl Record {
