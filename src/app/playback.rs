@@ -521,18 +521,23 @@ impl AurafyApp {
                     }
                 }
                 if self.local_status.active {
-                    if state.is_playing
-                        && state
-                            .track
-                            .as_ref()
-                            .is_some_and(|track| track.duration_ms > 0)
-                        && let Some(position) = self
-                            .pending_handoff
-                            .as_ref()
-                            .and_then(|pending| pending.correction(&state))
+                    let handoff_resolved = self.pending_handoff.as_ref().is_some_and(|pending| {
+                        pending.captured.elapsed() > Duration::from_secs(10)
+                            || (state.is_playing
+                                && state.track.as_ref().is_some_and(|track| {
+                                    track.duration_ms > 0 && track.uri == pending.bookmark.track.uri
+                                }))
+                    });
+                    if handoff_resolved
+                        && let Some(pending) = self.pending_handoff.take()
+                        && let Some(position) = pending.correction(&state)
                     {
-                        self.pending_handoff = None;
-                        self.local_command("restore_position",vec![serde_json::json!({"type":"command","command":"seek","position_ms":position})]);
+                        self.local_command(
+                            "restore_position",
+                            vec![serde_json::json!({
+                                "type": "command", "command": "seek", "position_ms": position
+                            })],
+                        );
                     }
                     if state
                         .track
