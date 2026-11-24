@@ -245,6 +245,7 @@ impl AurafyApp {
                             changed |= ui.selectable_value(&mut self.config.audio.normalize, Some(false), "Off").changed();
                         });
                     });
+                    ui.label(RichText::new("Keep loud and quiet songs at a similar volume.").size(12.0).color(colours.muted));
                     ui.add_space(10.0);
                     changed |= preference(
                         ui,
@@ -252,7 +253,6 @@ impl AurafyApp {
                         "Ad blocker (auto-mute & skip ads)",
                         "Automatically mutes and skips detected ad breaks when controlling Spotify playback.",
                     );
-                    ui.label(RichText::new("Keep loud and quiet songs at a similar volume.").size(12.0).color(colours.muted));
                     ui.add_space(8.0);
                     ui.label(RichText::new("Quit and reopen Aurafy to apply audio changes.").size(11.5).color(colours.muted));
                     ui.add_space(12.0);
