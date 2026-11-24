@@ -2479,10 +2479,13 @@ impl AurafyApp {
                 if busy { colours.muted } else { colours.text },
                 new_rect.width() - 36.0,
             );
-            if new_response.clicked() && !busy {
+            if new_response.clicked() && !busy && self.is_connected() {
                 self.show_add_to_playlist = false;
                 self.show_create_playlist = true;
                 ui.close();
+            }
+            if !self.is_connected() {
+                new_response.on_hover_text("Connect Spotify to create playlists");
             }
             ui.separator();
             ui.label(
@@ -2594,6 +2597,7 @@ impl AurafyApp {
                             if compact_pill_button(ui, "Try again", Some(Icon::Refresh), false)
                                 .clicked()
                             {
+                                self.last_home_load = None;
                                 self.load_home_data(ctx);
                             }
                         }
