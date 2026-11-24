@@ -1159,7 +1159,7 @@ impl AurafyApp {
         let has_existing = !self.queue.is_empty()
             || !self.priority_queue.is_empty()
             || self.suppress_upstream_queue;
-        if has_existing
+        if (has_existing || self.use_free_player())
             && !track.uri.is_empty()
             && (self.use_local_playback() || self.is_connected() || self.is_demo_mode())
         {
@@ -1195,7 +1195,8 @@ impl AurafyApp {
         let has_existing = !self.queue.is_empty()
             || !self.priority_queue.is_empty()
             || self.suppress_upstream_queue;
-        if has_existing && (self.use_local_playback() || self.is_connected() || self.is_demo_mode())
+        if (has_existing || self.use_free_player())
+            && (self.use_local_playback() || self.is_connected() || self.is_demo_mode())
         {
             let before = self.priority_queue.len();
             self.queue_priority_tracks(&valid);
@@ -1256,6 +1257,16 @@ impl AurafyApp {
             } else {
                 format!("Shuffling · {} up next", self.priority_queue.len())
             });
+            return;
+        }
+        if self.can_start_free_player() {
+            self.start_local_collection_queue(
+                String::new(),
+                std::iter::once(first).chain(shuffled).collect(),
+                0,
+                None,
+                ctx,
+            );
             return;
         }
         self.suppress_upstream_queue = false;

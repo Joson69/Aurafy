@@ -622,7 +622,9 @@ impl AurafyApp {
             self.select_local_on_ready = false;
             if self.is_playing {
                 // A timer must never activate this computer just to pause it.
-                if self.local_status.active && self.local_player.is_some() {
+                if self.use_free_player() {
+                    self.send_playback_action("pause", ctx);
+                } else if self.local_status.active && self.local_player.is_some() {
                     self.local_command("pause", vec![local_player::request("pause")]);
                 } else if self.is_connected() {
                     self.start_spotify_action(
