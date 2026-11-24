@@ -1063,6 +1063,7 @@ pub fn get_playlist_uris(
     access_token: &str,
     playlist_id: &str,
 ) -> Result<std::collections::HashSet<String>, String> {
+    validate_playlist_id(playlist_id)?;
     let client = http_client()?;
     let mut uris = std::collections::HashSet::new();
     for page in 0..2000 {
@@ -1109,12 +1110,20 @@ pub fn get_playlist_items(access_token: &str, playlist_id: &str) -> Result<Vec<T
     Ok(tracks)
 }
 
+fn validate_playlist_id(id: &str) -> Result<(), String> {
+    if id.is_empty() || !id.bytes().all(|byte| byte.is_ascii_alphanumeric()) {
+        return Err("Invalid Spotify playlist ID".into());
+    }
+    Ok(())
+}
+
 fn playlist_items_page(
     client: &Client,
     access: &str,
     id: &str,
     offset: usize,
 ) -> Result<PlaylistItemsPage, String> {
+    validate_playlist_id(id)?;
     api_response(
         client
             .get(format!("{API_BASE}/playlists/{id}/items"))
