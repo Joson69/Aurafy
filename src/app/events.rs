@@ -464,6 +464,7 @@ impl AurafyApp {
                                             .as_ref()
                                             .map(|item| item.id.as_str())
                                             == Some(playlist_id)
+                                            && self.page == Page::Library
                                         {
                                             self.open_playlist(playlist, ctx);
                                         }

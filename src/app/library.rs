@@ -276,7 +276,9 @@ impl AurafyApp {
             self.playlist_tracks
                 .retain(|track| !removed.contains(&track.uri));
             #[cfg(not(test))]
-            if let Some(playlist) = self.selected_playlist.clone() {
+            if let Some(playlist) = self.selected_playlist.clone()
+                && self.page == Page::Library
+            {
                 self.open_playlist(playlist, ctx);
             }
         }
