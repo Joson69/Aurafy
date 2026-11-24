@@ -612,10 +612,11 @@ impl AurafyApp {
                     if let Some(token) = token {
                         self.accept_token(token);
                     }
+                    if revision != self.library_revision {
+                        self.library_refresh_needed = true;
+                        continue;
+                    }
                     match saved_tracks {
-                        _ if revision != self.library_revision => {
-                            self.library_refresh_needed = true;
-                        }
                         Ok(tracks) => {
                             self.saved_track_ids =
                                 tracks.iter().map(|track| track.id.clone()).collect();
@@ -647,6 +648,7 @@ impl AurafyApp {
                     }
                 }
                 AppEvent::PlaylistLoaded {
+                    generation,
                     playlist_id,
                     tracks,
                     token,
@@ -654,11 +656,12 @@ impl AurafyApp {
                     if let Some(token) = token {
                         self.accept_token(token);
                     }
-                    if self
-                        .selected_playlist
-                        .as_ref()
-                        .map(|playlist| playlist.id.as_str())
-                        == Some(playlist_id.as_str())
+                    if generation == self.playlist_load_generation
+                        && self
+                            .selected_playlist
+                            .as_ref()
+                            .map(|playlist| playlist.id.as_str())
+                            == Some(playlist_id.as_str())
                     {
                         self.playlist_loading = false;
                         match tracks {

@@ -341,6 +341,7 @@ pub(crate) enum AppEvent {
         token: Option<TokenState>,
     },
     PlaylistLoaded {
+        generation: u64,
         playlist_id: String,
         tracks: Result<Vec<Track>, String>,
         token: Option<TokenState>,
@@ -532,6 +533,7 @@ pub(crate) struct AurafyApp {
     pub(crate) library_refresh_needed: bool,
     pub(crate) library_error: Option<String>,
     pub(crate) playlist_loading: bool,
+    pub(crate) playlist_load_generation: u64,
 
     pub(crate) artwork_cache: artwork::Cache,
     pub(crate) artwork_pending: HashSet<String>,
@@ -928,6 +930,7 @@ impl AurafyApp {
             library_refresh_needed: false,
             library_error: None,
             playlist_loading: false,
+            playlist_load_generation: 0,
             artwork_cache: artwork::Cache::default(),
             artwork_pending: HashSet::new(),
             artwork_failed: HashSet::new(),

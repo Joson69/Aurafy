@@ -2787,6 +2787,7 @@ fn switching_playlists_keeps_the_selected_playlist_loading() {
     app.playlist_loading = true;
     app.tx
         .send(AppEvent::PlaylistLoaded {
+            generation: app.playlist_load_generation,
             playlist_id: "first".into(),
             tracks: Err("old error".into()),
             token: None,
@@ -2797,6 +2798,7 @@ fn switching_playlists_keeps_the_selected_playlist_loading() {
     assert!(app.playlist_error.is_none());
     app.tx
         .send(AppEvent::PlaylistLoaded {
+            generation: app.playlist_load_generation,
             playlist_id: "second".into(),
             tracks: Err("current error".into()),
             token: None,

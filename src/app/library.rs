@@ -347,6 +347,8 @@ impl AurafyApp {
         self.selected_playlist = Some(playlist.clone());
         self.playlist_error = None;
         self.playlist_tracks.clear();
+        self.playlist_load_generation = self.playlist_load_generation.wrapping_add(1);
+        let generation = self.playlist_load_generation;
         if !playlist.items_accessible {
             self.playlist_loading = false;
             self.set_status("Spotify does not expose this playlist's items to this app");
@@ -367,6 +369,7 @@ impl AurafyApp {
                 Err(error) => (None, Err(error)),
             };
             let _ = tx.send(AppEvent::PlaylistLoaded {
+                generation,
                 playlist_id,
                 tracks,
                 token,
