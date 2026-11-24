@@ -1568,10 +1568,12 @@ impl AurafyApp {
                             } else if !cat.tracks.is_empty() {
                                 ui.label(RichText::new("Songs").size(18.0).strong());
                                 ui.add_space(6.0);
-                                self.draw_track_table(
+                                self.draw_track_rows(
                                     ui,
                                     ctx,
                                     cat.tracks.iter().take(6).cloned().collect(),
+                                    false,
+                                    true,
                                 );
                             }
                             ui.add_space(20.0);
@@ -1792,7 +1794,7 @@ impl AurafyApp {
             } else if self.playlist_tracks.is_empty() {
                 ui.label(RichText::new("This playlist has no songs.").color(colours.muted));
             } else {
-                self.draw_track_rows(ui, ctx, self.playlist_tracks.clone(), filter_changed);
+                self.draw_track_rows(ui, ctx, self.playlist_tracks.clone(), filter_changed, false);
             }
             return;
         }
@@ -1861,7 +1863,7 @@ impl AurafyApp {
     }
 
     fn draw_track_table(&mut self, ui: &mut Ui, ctx: &egui::Context, tracks: Vec<Track>) {
-        self.draw_track_rows(ui, ctx, tracks, false);
+        self.draw_track_rows(ui, ctx, tracks, false, false);
     }
 
     fn draw_track_rows(
@@ -1870,6 +1872,7 @@ impl AurafyApp {
         ctx: &egui::Context,
         tracks: Vec<Track>,
         reset_scroll: bool,
+        inline: bool,
     ) {
         let colours = appearance::palette(ctx);
         if tracks.is_empty() {
@@ -2135,7 +2138,7 @@ impl AurafyApp {
         if reset_scroll {
             scroll = scroll.vertical_scroll_offset(0.0);
         }
-        scroll.show_rows(ui, row_h - 4.0, row_count, |ui, range| {
+        let mut draw_rows = |ui: &mut Ui, range: std::ops::Range<usize>| {
             for row in range {
                 let i = display_indices[row];
                 let track = &tracks[i];
@@ -2285,7 +2288,12 @@ impl AurafyApp {
                     self.play_table_track(track.clone(), i, ctx);
                 }
             }
-        });
+        };
+        if inline {
+            draw_rows(ui, 0..row_count);
+        } else {
+            scroll.show_rows(ui, row_h - 4.0, row_count, draw_rows);
+        }
     }
 
     fn track_menu(
