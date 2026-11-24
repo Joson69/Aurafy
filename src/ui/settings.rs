@@ -327,8 +327,8 @@ impl AurafyApp {
                                 candidate.clone()
                             };
                             self.persist_preferences();
-                            if self.local_player.is_some() {
-                                self.start_local_playback(ctx, false);
+                            if self.local_player.is_some() || self.local_starting {
+                                self.reconnect_local_player(ctx);
                                 self.set_status(format!("Restarting local player as {candidate}…"));
                             } else {
                                 self.set_status(format!("Device name set to {candidate}"));
@@ -338,8 +338,8 @@ impl AurafyApp {
                             self.device_name_draft = local_player::DEVICE_NAME.into();
                             self.config.connect_device_name.clear();
                             self.persist_preferences();
-                            if self.local_player.is_some() {
-                                self.start_local_playback(ctx, false);
+                            if self.local_player.is_some() || self.local_starting {
+                                self.reconnect_local_player(ctx);
                                 self.set_status("Restarting local player as Aurafy…");
                             } else {
                                 self.set_status("Device name reset to Aurafy");
