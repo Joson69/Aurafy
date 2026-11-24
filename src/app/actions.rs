@@ -1259,6 +1259,7 @@ impl AurafyApp {
         }
         self.suppress_upstream_queue = false;
         self.priority_queue.clear();
+        self.manual_queue_len = 0;
         self.priority_dispatched = None;
         let remaining: Vec<Track> = shuffled.into_iter().take(24).collect();
         if self.use_local_for_play() && !first.uri.is_empty() {
