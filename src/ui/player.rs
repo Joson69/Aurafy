@@ -972,7 +972,7 @@ impl AurafyApp {
                     ctx.copy_text(text_to_copy.clone());
                     self.set_status("Copied lyrics to clipboard");
                 }
-                let size = self.config.lyrics_font_size.clamp(24, 44);
+                let size = self.config.lyric_size(false) as u8;
                 if ui
                     .add_enabled_ui(size < 44, |ui| compact_pill_button(ui, "A+", None, false))
                     .inner
