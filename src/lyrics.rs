@@ -302,9 +302,10 @@ fn best_match(records: Vec<Record>, key: &TrackKey) -> Option<Record> {
         .filter(|r| {
             canonical(title_without_features(&r.track_name))
                 == canonical(title_without_features(&key.title))
-                && r.artist_name
-                    .split([',', ';'])
-                    .any(|a| canonical(a) == canonical(&key.artist))
+                && (canonical(&r.artist_name) == canonical(&key.artist)
+                    || r.artist_name
+                        .split([',', ';'])
+                        .any(|a| canonical(a) == canonical(&key.artist)))
                 && (key.seconds == 0 || (r.duration - key.seconds as f64).abs() <= 2.0)
                 && (r.instrumental
                     || r.plain_lyrics
