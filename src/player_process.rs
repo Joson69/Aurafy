@@ -2,17 +2,21 @@
 //! Only the process recorded in this data directory with the expected image
 //! and a creation time no newer than that PID file can be reclaimed.
 #[cfg(windows)]
-pub fn reclaim(executable: &std::path::Path, data: &std::path::Path) -> Result<(), String> {
+pub(crate) fn recorded_receiver(
+    executable: &std::path::Path,
+    data: &std::path::Path,
+    access: u32,
+) -> Option<(u32, std::os::windows::io::OwnedHandle)> {
     use std::{
         fs,
         os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
         time::{Duration, UNIX_EPOCH},
     };
     use windows_sys::Win32::{
-        Foundation::{FILETIME, WAIT_OBJECT_0},
+        Foundation::FILETIME,
         System::Threading::{
-            GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
-            PROCESS_TERMINATE, QueryFullProcessImageNameW, TerminateProcess, WaitForSingleObject,
+            GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+            QueryFullProcessImageNameW,
         },
     };
     let pid_file = data.join("soloist.pid");
@@ -21,18 +25,12 @@ pub fn reclaim(executable: &std::path::Path, data: &std::path::Path) -> Result<(
         .and_then(|s| s.trim().parse::<u32>().ok())
         .filter(|pid| *pid != 0 && *pid != std::process::id())
     else {
-        return Ok(());
+        return None;
     };
     // Keep the handle throughout verification and termination, avoiding PID reuse.
-    let raw = unsafe {
-        OpenProcess(
-            PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE | PROCESS_TERMINATE,
-            0,
-            pid,
-        )
-    };
+    let raw = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | access, 0, pid) };
     if raw.is_null() {
-        return Ok(());
+        return None;
     }
     let handle = unsafe { OwnedHandle::from_raw_handle(raw) };
     let mut path = vec![0u16; 32768];
@@ -41,34 +39,51 @@ pub fn reclaim(executable: &std::path::Path, data: &std::path::Path) -> Result<(
         QueryFullProcessImageNameW(handle.as_raw_handle(), 0, path.as_mut_ptr(), &mut length)
     } == 0
     {
-        return Ok(());
+        return None;
     }
     let actual = std::path::PathBuf::from(String::from_utf16_lossy(&path[..length as usize]));
     let (Ok(actual), Ok(expected)) = (actual.canonicalize(), executable.canonicalize()) else {
-        return Ok(());
+        return None;
     };
     if !actual
         .to_string_lossy()
         .eq_ignore_ascii_case(&expected.to_string_lossy())
     {
-        return Ok(());
+        return None;
     }
     let mut times = [FILETIME::default(); 4];
     let [created, exited, kernel, user] = &mut times;
     if unsafe { GetProcessTimes(handle.as_raw_handle(), created, exited, kernel, user) } == 0 {
-        return Ok(());
+        return None;
     }
     let ticks = (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime);
     let Some(unix_ticks) = ticks.checked_sub(116_444_736_000_000_000) else {
-        return Ok(());
+        return None;
     };
     let created_at = UNIX_EPOCH + Duration::from_nanos(unix_ticks.saturating_mul(100));
     let Some(recorded_at) = fs::metadata(&pid_file).ok().and_then(|m| m.modified().ok()) else {
-        return Ok(());
+        return None;
     };
     if recorded_at < created_at {
-        return Ok(());
+        return None;
     }
+    Some((pid, handle))
+}
+
+#[cfg(windows)]
+pub fn reclaim(executable: &std::path::Path, data: &std::path::Path) -> Result<(), String> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::{
+        Foundation::WAIT_OBJECT_0,
+        System::Threading::{
+            PROCESS_SYNCHRONIZE, PROCESS_TERMINATE, TerminateProcess, WaitForSingleObject,
+        },
+    };
+    let Some((_, handle)) =
+        recorded_receiver(executable, data, PROCESS_SYNCHRONIZE | PROCESS_TERMINATE)
+    else {
+        return Ok(());
+    };
     if unsafe { WaitForSingleObject(handle.as_raw_handle(), 0) } == WAIT_OBJECT_0 {
         return Ok(());
     }

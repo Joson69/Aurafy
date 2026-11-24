@@ -183,14 +183,14 @@ fn hidden_command(path: impl AsRef<std::ffi::OsStr>) -> Command {
     command
 }
 
-fn engine_path() -> Result<PathBuf, String> {
+pub(crate) fn existing_engine_path() -> Option<PathBuf> {
     let installed = directory().join("bin/soloist.exe");
     if installed.is_file() {
-        return Ok(installed);
+        return Some(installed);
     }
     let legacy = legacy_directory().join("bin/soloist.exe");
     if legacy.is_file() {
-        return Ok(legacy);
+        return Some(legacy);
     }
     if let Ok(executable) = std::env::current_exe()
         && let Some(parent) = executable.parent()
@@ -200,10 +200,18 @@ fn engine_path() -> Result<PathBuf, String> {
             parent.join("../tools/soloist/soloist.exe"),
         ] {
             if candidate.is_file() {
-                return Ok(candidate);
+                return Some(candidate);
             }
         }
     }
+    None
+}
+
+fn engine_path() -> Result<PathBuf, String> {
+    if let Some(path) = existing_engine_path() {
+        return Ok(path);
+    }
+    let installed = directory().join("bin/soloist.exe");
     install_engine(&installed)?;
     Ok(installed)
 }
