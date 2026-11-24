@@ -281,7 +281,7 @@ impl AurafyApp {
             }
         }
         self.library_revision += 1;
-        self.last_library_poll = Instant::now() - Duration::from_secs(60);
+        self.last_library_poll = None;
         #[cfg(not(test))]
         self.load_library(ctx, true);
         #[cfg(test)]
@@ -294,14 +294,17 @@ impl AurafyApp {
             return;
         }
         if self.library_loading
-            || (!force && self.last_library_poll.elapsed() < Duration::from_secs(30))
+            || (!force
+                && self
+                    .last_library_poll
+                    .is_some_and(|last| last.elapsed() < Duration::from_secs(30)))
         {
             return;
         }
         self.library_loading = true;
         self.library_refresh_needed = false;
         self.library_error = None;
-        self.last_library_poll = Instant::now();
+        self.last_library_poll = Some(Instant::now());
         let revision = self.library_revision;
         let token = self.token.clone().unwrap();
         let client_id = self.config.client_id.clone();
@@ -380,9 +383,9 @@ impl AurafyApp {
             return;
         }
         self.player_poll_in_progress = true;
-        self.last_player_poll = Instant::now();
+        self.last_player_poll = Some(Instant::now());
         if include_queue {
-            self.last_queue_poll = Instant::now();
+            self.last_queue_poll = Some(Instant::now());
         }
         let client_id = self.config.client_id.clone();
         let tx = self.spotify_tx.clone();

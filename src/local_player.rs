@@ -617,17 +617,17 @@ fn socket_loop(
 ) -> Result<(), String> {
     // Managed-session verification follows Spotifast's Soloist lifecycle.
     // See THIRD_PARTY_NOTICES.md for the pinned reference and MIT notice.
-    let mut last_auth_check = Instant::now() - Duration::from_secs(30);
-    let mut last_queue_refresh = Instant::now() - Duration::from_secs(5);
+    let mut last_auth_check = None;
+    let mut last_queue_refresh = None;
     while !stop.load(Ordering::Relaxed) {
         state.check_auth_timeout(notify);
         let interval = Duration::from_secs(if state.status.paired { 30 } else { 2 });
-        if last_auth_check.elapsed() >= interval {
+        if last_auth_check.is_none_or(|last: Instant| last.elapsed() >= interval) {
             send(socket, &request("get_auth_state"))?;
             if state.status.paired {
                 send(socket, &request("get_state"))?;
             }
-            last_auth_check = Instant::now();
+            last_auth_check = Some(Instant::now());
         }
         if state.status.paired
             && let Ok(job) = jobs.try_recv()
@@ -704,9 +704,10 @@ fn socket_loop(
         }
         if state.status.active
             && state.queue_dirty
-            && last_queue_refresh.elapsed() >= Duration::from_millis(300)
+            && last_queue_refresh
+                .is_none_or(|last: Instant| last.elapsed() >= Duration::from_millis(300))
         {
-            last_queue_refresh = Instant::now();
+            last_queue_refresh = Some(Instant::now());
             let port = socket
                 .get_ref()
                 .peer_addr()

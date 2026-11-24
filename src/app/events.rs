@@ -275,8 +275,8 @@ impl AurafyApp {
                                 self.progress = 0.0;
                                 self.duration_ms = 1;
                             }
-                            self.last_player_poll = Instant::now() - Duration::from_secs(10);
-                            self.last_queue_poll = Instant::now() - Duration::from_secs(30);
+                            self.last_player_poll = None;
+                            self.last_queue_poll = None;
                             self.set_status(
                                 "Spotify connected · Live search and Connect controls enabled",
                             );
@@ -385,18 +385,16 @@ impl AurafyApp {
                                     if self.local_player.is_some() && !self.follow_remote_device {
                                         self.local_command("refresh_context", vec![]);
                                     }
-                                    self.last_queue_poll = Instant::now() - Duration::from_secs(30);
-                                    self.last_player_poll =
-                                        Instant::now() - Duration::from_secs(10);
+                                    self.last_queue_poll = None;
+                                    self.last_player_poll = None;
                                     self.set_status("Collection playback started");
                                 }
                                 "next" => self.set_status("Skipped to next track"),
                                 "previous" => self.set_status("Went to previous track"),
                                 value if value.starts_with("queue:") => {
                                     self.set_status("Added to queue");
-                                    self.last_queue_poll = Instant::now() - Duration::from_secs(30);
-                                    self.last_player_poll =
-                                        Instant::now() - Duration::from_secs(10);
+                                    self.last_queue_poll = None;
+                                    self.last_player_poll = None;
                                 }
                                 value if value.starts_with("save:") => {
                                     if let Some((track, _)) =
@@ -444,8 +442,7 @@ impl AurafyApp {
                                         }
                                     }
                                     self.set_status("Added track to playlist");
-                                    self.last_library_poll =
-                                        Instant::now() - Duration::from_secs(60);
+                                    self.last_library_poll = None;
                                     let playlist_id = value.split(':').nth(1).unwrap_or_default();
                                     if let Some(playlist) = self
                                         .playlists
@@ -486,7 +483,7 @@ impl AurafyApp {
                                 _ => {}
                             }
                             if action != "volume" {
-                                self.last_player_poll = Instant::now() - Duration::from_secs(10);
+                                self.last_player_poll = None;
                             }
                             if action == "pause"
                                 || action == "resume"
@@ -533,7 +530,7 @@ impl AurafyApp {
                                     self.library_changes.remove(id);
                                 }
                                 self.library_revision += 1;
-                                self.last_library_poll = Instant::now() - Duration::from_secs(60);
+                                self.last_library_poll = None;
                             }
                             if action.starts_with("playlist_add:")
                                 || action.starts_with("playlist_remove:")
@@ -542,7 +539,7 @@ impl AurafyApp {
                                 self.playlist_add_pending = None;
                                 self.playlist_add_error = Some(error.clone());
                             }
-                            self.last_player_poll = Instant::now() - Duration::from_secs(10);
+                            self.last_player_poll = None;
                             self.set_status(error);
                         }
                     }
@@ -1022,11 +1019,15 @@ impl eframe::App for AurafyApp {
         if self.is_connected()
             && !self.local_status.active
             && !self.player_poll_in_progress
-            && self.last_player_poll.elapsed() >= Duration::from_secs(3)
+            && self
+                .last_player_poll
+                .is_none_or(|last| last.elapsed() >= Duration::from_secs(3))
         {
             let include_queue = (!self.config.local_playback || self.follow_remote_device)
                 && self.show_queue
-                && self.last_queue_poll.elapsed() >= Duration::from_secs(18);
+                && self
+                    .last_queue_poll
+                    .is_none_or(|last| last.elapsed() >= Duration::from_secs(18));
             self.poll_player(ctx, include_queue);
         }
         if self.is_playing {

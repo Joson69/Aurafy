@@ -580,7 +580,7 @@ fn device_list_keeps_the_ready_local_receiver_and_background_refresh_is_quiet() 
         refresh_token: None,
         expires_at: Instant::now() + Duration::from_secs(300),
     });
-    app.last_devices_poll = Instant::now() - Duration::from_secs(31);
+    app.next_devices_poll = Instant::now();
     assert!(
         !app.should_refresh_devices(),
         "settings must not poll devices"

@@ -10,7 +10,7 @@ impl AurafyApp {
             return;
         }
         self.devices_loading = true;
-        self.last_devices_poll = Instant::now();
+        self.next_devices_poll = Instant::now() + Duration::from_secs(30);
         let client_id = self.config.client_id.clone();
         let tx = self.spotify_tx.clone();
         let ctx = ctx.clone();
@@ -69,7 +69,7 @@ impl AurafyApp {
             && self.is_connected()
             && !self.local_status.active
             && !self.devices_loading
-            && self.last_devices_poll.elapsed() >= Duration::from_secs(30)
+            && Instant::now() >= self.next_devices_poll
     }
 
     pub(crate) fn load_insights(&mut self, ctx: &egui::Context) {
@@ -395,8 +395,8 @@ impl AurafyApp {
                     self.device_name = None;
                     self.device_id = None;
                     self.pending_handoff = None;
-                    self.last_player_poll = Instant::now() - Duration::from_secs(10);
-                    self.last_devices_poll = Instant::now() - Duration::from_secs(10);
+                    self.last_player_poll = None;
+                    self.next_devices_poll = Instant::now() + Duration::from_secs(20);
                 }
                 if !status.running && !status.connecting {
                     self.resume_on_local_ready = false;
