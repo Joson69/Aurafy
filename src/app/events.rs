@@ -77,6 +77,8 @@ impl AurafyApp {
                     if let Ok(uris) = uris {
                         if uris.contains(&self.playlist_picker_track_uri) {
                             self.playlist_picker_added.insert(playlist_id.clone());
+                        } else {
+                            self.playlist_picker_added.remove(&playlist_id);
                         }
                         self.playlist_membership.insert(playlist_id, uris);
                     }
