@@ -346,6 +346,7 @@ impl AurafyApp {
                 && let Some(fp) = &self.free_player
             {
                 fp.send(free_player::FreeCommand::SetVolume(f64::from(self.volume)));
+                self.volume_control.complete(true);
                 return;
             }
         }
@@ -376,6 +377,9 @@ impl AurafyApp {
             }
         }
         let Some(token) = self.token.clone() else {
+            if action == "volume" {
+                self.volume_control.complete(false);
+            }
             self.set_status("Connect Spotify to use this control with a real device");
             return;
         };

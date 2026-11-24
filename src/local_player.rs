@@ -632,45 +632,51 @@ fn socket_loop(
         if state.status.paired
             && let Ok(job) = jobs.try_recv()
         {
-            let mut result = Ok(());
-            for request in job.requests {
-                send(socket, &request)?;
-                let deadline = Instant::now() + Duration::from_secs(5);
-                loop {
-                    if stop.load(Ordering::Relaxed) {
-                        return Ok(());
-                    }
-                    if Instant::now() >= deadline {
-                        result =
-                            Err("Spotify did not confirm the playback command. Try again.".into());
-                        break;
-                    }
-                    if let Some(event) = read(socket)? {
-                        match event["type"].as_str() {
-                            Some("command_result") if event["command"] == request["command"] => {
-                                break;
-                            }
-                            Some("error") => {
-                                result = Err(event["message"]
-                                    .as_str()
-                                    .unwrap_or("Local playback command failed")
-                                    .chars()
-                                    .take(240)
-                                    .collect());
-                                break;
-                            }
-                            _ => {
-                                if state.apply(&event, notify) && state.status.paired {
-                                    send(socket, &self::request("get_state"))?;
+            let command_result = (|| -> Result<Result<(), String>, String> {
+                let mut result = Ok(());
+                for request in job.requests {
+                    send(socket, &request)?;
+                    let deadline = Instant::now() + Duration::from_secs(5);
+                    loop {
+                        if stop.load(Ordering::Relaxed) {
+                            return Ok(Err("Local playback was stopped.".into()));
+                        }
+                        if Instant::now() >= deadline {
+                            result =
+                                Err("Spotify did not confirm the playback command. Try again."
+                                    .into());
+                            break;
+                        }
+                        if let Some(event) = read(socket)? {
+                            match event["type"].as_str() {
+                                Some("command_result")
+                                    if event["command"] == request["command"] =>
+                                {
+                                    break;
+                                }
+                                Some("error") => {
+                                    result = Err(event["message"]
+                                        .as_str()
+                                        .unwrap_or("Local playback command failed")
+                                        .chars()
+                                        .take(240)
+                                        .collect());
+                                    break;
+                                }
+                                _ => {
+                                    if state.apply(&event, notify) && state.status.paired {
+                                        send(socket, &self::request("get_state"))?;
+                                    }
                                 }
                             }
                         }
                     }
+                    if result.is_err() {
+                        break;
+                    }
                 }
-                if result.is_err() {
-                    break;
-                }
-            }
+                Ok(result)
+            })();
             let refresh_queue = matches!(
                 job.action.as_str(),
                 "play_track"
@@ -684,8 +690,9 @@ fn socket_loop(
             );
             notify(Event::CommandFinished {
                 action: job.action,
-                result,
+                result: command_result.clone().unwrap_or_else(Err),
             });
+            command_result?.ok();
             if state.status.paired {
                 send(socket, &request("get_state"))?;
                 if state.status.active && refresh_queue {

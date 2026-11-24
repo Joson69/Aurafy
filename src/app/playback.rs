@@ -198,6 +198,10 @@ impl AurafyApp {
         };
         self.stop_free_player();
         self.local_player_generation = self.local_player_generation.wrapping_add(1);
+        self.volume_control = volume::Control::default();
+        if self.local_status.active {
+            self.is_playing = false;
+        }
         self.local_player.take();
         self.select_local_on_ready = true;
         self.local_starting = true;
@@ -275,6 +279,10 @@ impl AurafyApp {
 
     pub(crate) fn restart_local_pairing(&mut self, ctx: &egui::Context) {
         self.local_player_generation = self.local_player_generation.wrapping_add(1);
+        self.volume_control = volume::Control::default();
+        if self.local_status.active {
+            self.is_playing = false;
+        }
         self.local_player.take();
         self.local_starting = false;
         self.local_status = local_player::Status::default();
@@ -283,6 +291,10 @@ impl AurafyApp {
 
     pub(crate) fn reconnect_local_player(&mut self, ctx: &egui::Context) {
         self.local_player_generation = self.local_player_generation.wrapping_add(1);
+        self.volume_control = volume::Control::default();
+        if self.local_status.active {
+            self.is_playing = false;
+        }
         self.local_player.take();
         self.local_starting = false;
         self.local_status = local_player::Status::default();
