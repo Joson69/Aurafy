@@ -261,6 +261,10 @@ impl AurafyApp {
     }
 
     pub(crate) fn stop_local_playback(&mut self) {
+        if let Some(previous) = self.pre_ad_volume.take() {
+            self.volume = f32::from(previous) / 100.0;
+        }
+        self.last_ad_skip = None;
         self.volume_control = volume::Control::default();
         self.select_local_on_ready = false;
         self.resume_on_local_ready = false;
@@ -671,7 +675,7 @@ impl AurafyApp {
         if self.config.ad_blocker && is_ad {
             if self.pre_ad_volume.is_none() {
                 let current_vol = (self.volume * 100.0).round().clamp(0.0, 100.0) as u8;
-                self.pre_ad_volume = Some(current_vol.max(1));
+                self.pre_ad_volume = Some(current_vol);
                 self.volume = 0.0;
                 self.queue_volume(true, ctx);
             }
@@ -681,7 +685,15 @@ impl AurafyApp {
             {
                 self.last_ad_skip = Some(Instant::now());
                 self.set_status("Ad detected · Muting and skipping…");
-                self.send_playback_action("next", ctx);
+                if self.use_local_playback() {
+                    self.local_command("ad_skip", vec![local_player::request("next")]);
+                } else {
+                    self.start_spotify_action(
+                        "ad_skip".into(),
+                        |access| spotify::playback_command(access, "next"),
+                        ctx,
+                    );
+                }
             }
         } else if !is_ad && let Some(prev_vol) = self.pre_ad_volume.take() {
             self.last_ad_skip = None;
