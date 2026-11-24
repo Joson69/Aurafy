@@ -518,9 +518,12 @@ impl AurafyApp {
                             .track
                             .as_ref()
                             .is_some_and(|track| track.duration_ms > 0)
-                        && let Some(pending) = self.pending_handoff.take()
-                        && let Some(position) = pending.correction(&state)
+                        && let Some(position) = self
+                            .pending_handoff
+                            .as_ref()
+                            .and_then(|pending| pending.correction(&state))
                     {
+                        self.pending_handoff = None;
                         self.local_command("restore_position",vec![serde_json::json!({"type":"command","command":"seek","position_ms":position})]);
                     }
                     if state
