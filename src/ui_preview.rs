@@ -1160,6 +1160,38 @@ fn label_center(app: &mut AurafyApp, ctx: &egui::Context, label: &str) -> Pos2 {
 }
 
 #[test]
+fn demo_home_opens_account_setup_without_attempting_sign_in() {
+    let ctx = egui::Context::default();
+    let mut app = AurafyApp::build(&ctx, AppConfig::default());
+    for _ in 0..3 {
+        ui_frame(&mut app, &ctx, vec![]);
+    }
+    let setup = label_center(&mut app, &ctx, "Set up Spotify");
+    assert!(
+        setup.y < 350.0,
+        "setup should be visible near the top of Home"
+    );
+    ui_click(&mut app, &ctx, setup);
+    assert!(app.page == Page::Settings);
+    assert!(app.settings_tab == SettingsTab::Account);
+    assert!(!app.auth_in_progress);
+    assert!(app.auth_error.is_none());
+
+    let dashboard = label_center(&mut app, &ctx, "Open Spotify Developer Dashboard");
+    let connect = label_center(&mut app, &ctx, "Save and connect Spotify");
+    assert!(
+        dashboard.y < connect.y,
+        "setup steps should follow sign-in order"
+    );
+    ui_click(&mut app, &ctx, connect);
+    assert!(!app.auth_in_progress);
+    assert!(
+        app.auth_error.is_none(),
+        "an empty Client ID cannot be submitted"
+    );
+}
+
+#[test]
 fn account_menu_routes_profile_and_keeps_background_preferences_independent() {
     let ctx = egui::Context::default();
     let mut app = AurafyApp::build(&ctx, AppConfig::default());
@@ -2616,47 +2648,31 @@ fn recent_popup_plays_song_directly_and_remove_does_not_play() {
 
 #[test]
 fn home_shortcuts_open_their_own_views() {
-    for (x, expected) in [
-        (360.0, Page::Liked),
-        (760.0, Page::Recent),
-        (1160.0, Page::Library),
+    for (label, expected) in [
+        (i18n::Text::LikedSongs, Page::Liked),
+        (i18n::Text::RecentlyPlayed, Page::Recent),
+        (i18n::Text::HomePlaylists, Page::Library),
     ] {
         let ctx = egui::Context::default();
-        let mut app = fixture(&ctx);
-        app.token = None; // These are UI checks, so no API calls are authorized.
-        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(1440.0, 900.0));
+        let mut app = AurafyApp::build(&ctx, AppConfig::default());
         for _ in 0..2 {
-            let _ = ctx.run(
-                egui::RawInput {
-                    screen_rect: Some(screen),
-                    ..Default::default()
-                },
-                |ctx| draw(&mut app, ctx),
-            );
+            ui_frame(&mut app, &ctx, vec![]);
         }
-        let pos = Pos2::new(x, 210.0);
-        for pressed in [true, false] {
-            let _ = ctx.run(
-                egui::RawInput {
-                    screen_rect: Some(screen),
-                    events: vec![
-                        egui::Event::PointerMoved(pos),
-                        egui::Event::PointerButton {
-                            pos,
-                            button: egui::PointerButton::Primary,
-                            pressed,
-                            modifiers: egui::Modifiers::NONE,
-                        },
-                    ],
-                    ..Default::default()
-                },
-                |ctx| draw(&mut app, ctx),
-            );
-        }
-        assert!(
-            app.page == expected,
-            "home shortcut at {x} opened the wrong page"
+        let output = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1440.0, 900.0))),
+                ..Default::default()
+            },
+            |ctx| draw(&mut app, ctx),
         );
+        let label = i18n::tr(app.config.language, label);
+        let shortcut = shapes_text_rects(&output.shapes, label)
+            .into_iter()
+            .filter(|rect| rect.min.x > 240.0)
+            .min_by(|a, b| a.min.y.total_cmp(&b.min.y))
+            .unwrap_or_else(|| panic!("Missing Home shortcut: {label}"));
+        ui_click(&mut app, &ctx, shortcut.center());
+        assert!(app.page == expected, "{label} opened the wrong page");
     }
 }
 

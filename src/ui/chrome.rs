@@ -149,7 +149,7 @@ impl AurafyApp {
                                             if self.is_connected() {
                                                 self.show_create_playlist = true;
                                             } else {
-                                                self.start_auth(ctx);
+                                                self.open_spotify_setup(ctx);
                                             }
                                         }
                                     });

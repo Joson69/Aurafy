@@ -475,6 +475,21 @@ impl AurafyApp {
         let colours = appearance::palette(ctx);
         let lang = self.config.language;
         heading(ui, i18n::tr(lang, i18n::Text::Home), "");
+        if self.is_demo_mode() {
+            card(ui.ctx()).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.label(RichText::new("Welcome to Aurafy").size(20.0).strong());
+                ui.label(
+                    RichText::new("Explore the sample library in silent demo mode. Set up Spotify to load your own music.")
+                        .color(colours.muted),
+                );
+                ui.add_space(8.0);
+                if ui.add(primary("Set up Spotify", ui.ctx())).clicked() {
+                    self.open_spotify_setup(ctx);
+                }
+            });
+            ui.add_space(16.0);
+        }
         let count = if self.is_demo_mode() {
             self.demo_tracks.len()
         } else {
@@ -606,18 +621,6 @@ impl AurafyApp {
         }
         self.track_cards(ui, ctx, &tracks, 6);
         ui.add_space(22.0);
-        if self.is_demo_mode() {
-            card(ui.ctx()).show(ui, |ui| {
-                ui.label(RichText::new("Bring your music along.").size(20.0).strong());
-                ui.label(
-                    RichText::new("Connect Spotify to find your playlists and favorites here.")
-                        .color(colours.muted),
-                );
-                if ui.add(primary("Connect Spotify", ui.ctx())).clicked() {
-                    self.start_auth(ctx);
-                }
-            });
-        }
         if let Some(error) = self.library_error.clone() {
             ui.add_space(16.0);
             self.error_notice(ui, &error);
@@ -1815,7 +1818,7 @@ impl AurafyApp {
                 if self.is_connected() {
                     self.show_create_playlist = true;
                 } else {
-                    self.start_auth(ctx);
+                    self.open_spotify_setup(ctx);
                 }
             }
             if icon_button(ui, Icon::Refresh, "Refresh library", false).clicked() {
@@ -2786,8 +2789,8 @@ impl AurafyApp {
                             }
                         }
                     }
-                } else if ui.add(primary("Connect Spotify", ui.ctx())).clicked() {
-                    self.start_auth(ctx);
+                } else if ui.add(primary("Set up Spotify", ui.ctx())).clicked() {
+                    self.open_spotify_setup(ctx);
                 }
             });
         });

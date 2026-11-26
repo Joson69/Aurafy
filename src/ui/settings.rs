@@ -551,6 +551,14 @@ impl AurafyApp {
             SettingsTab::Account => {
                 self.account_settings(ui, ctx);
                 ui.add_space(16.0);
+                if let Some(error) = self.playback_error.clone() {
+                    self.error_notice(ui, &error);
+                    ui.add_space(12.0);
+                }
+                egui::CollapsingHeader::new("Local player connection")
+                    .default_open(!self.local_status.paired)
+                    .show(ui, |ui| self.draw_local_playback_settings(ui, ctx));
+                ui.add_space(16.0);
                 card(ui.ctx()).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.label(
@@ -640,13 +648,6 @@ impl AurafyApp {
                     }
                 });
                 ui.add_space(16.0);
-                if let Some(error) = self.playback_error.clone() {
-                    self.error_notice(ui, &error);
-                    ui.add_space(12.0);
-                }
-                egui::CollapsingHeader::new("Local player connection")
-                    .default_open(!self.local_status.paired)
-                    .show(ui, |ui| self.draw_local_playback_settings(ui, ctx));
                 egui::CollapsingHeader::new("Font credits").show(ui, |ui| {
                     ui.label("Lato by the Lato Project Authors · SIL Open Font License 1.1");
                     ScrollArea::vertical()
@@ -678,7 +679,7 @@ impl AurafyApp {
         card(ui.ctx()).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.label(RichText::new("Listen on this computer").size(19.0).strong());
-            ui.label(RichText::new("Make Aurafy a Spotify Connect device, so your music plays here.").size(12.0).color(colours.muted));
+            ui.label(RichText::new("Set up Aurafy as a Spotify Connect device to play audio on this computer.").size(12.0).color(colours.muted));
             ui.add_space(12.0);
             if self.local_starting {
                 ui.horizontal(|ui| { ui.spinner(); ui.label("Starting local playback…"); });
@@ -695,12 +696,12 @@ impl AurafyApp {
                     if ui.button("Reset saved pairing").clicked() { self.restart_local_pairing(ctx); }
                 });
             } else {
-                ui.label(RichText::new("Enter your personal Spotify Soloist API key. It is saved in Windows Credential Manager, separately from your Spotify sign-in.").size(12.0).color(colours.muted));
+                ui.label(RichText::new("Spotify Premium is required to generate your personal Soloist API key. Aurafy saves the key in Windows Credential Manager.").size(12.0).color(colours.muted));
                 ui.add_space(6.0);
                 ui.add(TextEdit::singleline(&mut self.local_key_input).password(true).hint_text("Spotify Soloist API key").desired_width(460.0));
                 ui.add_space(8.0);
                 ui.horizontal_wrapped(|ui| {
-                    if ui.add(primary("Save key & enable playback", ui.ctx())).clicked() { self.enable_local_playback(ctx); }
+                    if ui.add_enabled(!self.local_key_input.trim().is_empty(), primary("Save key & enable playback", ui.ctx())).clicked() { self.enable_local_playback(ctx); }
                     if ui.button("Get a Soloist API key").clicked() { if let Err(error) = browser::open_url(local_player::KEY_PAGE) { self.playback_error = Some(error); } }
                 });
                 ui.label(RichText::new("Spotify’s official Windows playback engine is downloaded if needed. No Spotify desktop window needs to stay open.").size(11.0).color(colours.muted));
@@ -793,16 +794,74 @@ impl AurafyApp {
             });
             ui.add_space(16.0);
         }
-        egui::CollapsingHeader::new(if self.is_connected(){"Developer connection settings"}else{"Connect your Spotify account"}).default_open(!self.is_connected()).show(ui,|ui|{
-            card(ui.ctx()).show(ui,|ui|{
-                ui.set_width(ui.available_width());
-                ui.label(RichText::new("Spotify app setup").size(18.0).strong());
-                ui.label(RichText::new("Use the Client ID from your Spotify developer app. Your sign-in is saved securely on this computer.").size(12.0).color(colours.muted));ui.add_space(10.0);
-                ui.label(RichText::new("Client ID").size(12.0).strong());let enabled=!self.auth_in_progress&&!self.is_connected();ui.add_enabled(enabled,TextEdit::singleline(&mut self.config.client_id).hint_text("Spotify Client ID").desired_width(f32::INFINITY));ui.add_space(10.0);
-                ui.label(RichText::new("Register both callback addresses in your developer app:").size(12.0).color(colours.muted));
-                for (label,uri) in [("Standard",spotify::REDIRECT_URI),("Fallback",spotify::FALLBACK_REDIRECT_URI)]{ui.horizontal_wrapped(|ui|{ui.label(RichText::new(uri).monospace().size(12.0));if ui.small_button(format!("Copy {label}")).clicked(){ui.ctx().copy_text(uri.into());}});}
-                ui.add_space(12.0);ui.horizontal(|ui|{if ui.add_enabled(enabled,primary("Save and connect Spotify", ui.ctx())).clicked(){self.start_auth(ctx);}if ui.button("Developer dashboard").clicked(){if let Err(e)=browser::open_url("https://developer.spotify.com/dashboard"){self.auth_error=Some(e);}}});
+        let connected = self.is_connected();
+        let title = if connected {
+            "Developer connection settings"
+        } else {
+            "Connect your Spotify account"
+        };
+        egui::CollapsingHeader::new(title)
+            .default_open(!connected)
+            .show(ui, |ui| {
+                card(ui.ctx()).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.label(RichText::new("1. Create a Spotify app").size(17.0).strong());
+                    ui.label(
+                        RichText::new("Use your Spotify Premium account to create an app in the Developer Dashboard. Select Web API when asked which API to use.")
+                            .size(12.0)
+                            .color(colours.muted),
+                    );
+                    if ui.button("Open Spotify Developer Dashboard").clicked() {
+                        self.auth_error = browser::open_url("https://developer.spotify.com/dashboard").err();
+                    }
+
+                    ui.add_space(12.0);
+                    ui.label(RichText::new("2. Add both redirect URIs").size(17.0).strong());
+                    ui.label(
+                        RichText::new("Save these in your Spotify app settings. The second address is used when the first port is busy.")
+                            .size(12.0)
+                            .color(colours.muted),
+                    );
+                    ui.horizontal_wrapped(|ui| {
+                        for (label, uri) in [
+                            ("Copy primary URL", spotify::REDIRECT_URI),
+                            ("Copy fallback URL", spotify::FALLBACK_REDIRECT_URI),
+                        ] {
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new(uri).monospace().size(12.0));
+                                if ui.button(label).clicked() {
+                                    ui.ctx().copy_text(uri.into());
+                                }
+                            });
+                        }
+                    });
+
+                    ui.add_space(12.0);
+                    ui.label(RichText::new("3. Paste your Client ID").size(17.0).strong());
+                    ui.label(
+                        RichText::new("Find the Client ID in your Spotify app settings. Aurafy uses it to open Spotify sign-in in your browser.")
+                            .size(12.0)
+                            .color(colours.muted),
+                    );
+                    let enabled = !self.auth_in_progress && !connected;
+                    ui.add_enabled(
+                        enabled,
+                        TextEdit::singleline(&mut self.config.client_id)
+                            .hint_text("Spotify Client ID")
+                            .background_color(colours.panel2)
+                            .desired_width(ui.available_width().min(420.0)),
+                    );
+                    ui.add_space(8.0);
+                    if ui
+                        .add_enabled(
+                            enabled && !self.config.client_id.trim().is_empty(),
+                            primary("Save and connect Spotify", ui.ctx()),
+                        )
+                        .clicked()
+                    {
+                        self.start_auth(ctx);
+                    }
+                });
             });
-        });
     }
 }
